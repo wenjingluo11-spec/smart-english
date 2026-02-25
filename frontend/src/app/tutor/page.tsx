@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import ChatMessage from "@/components/chat/message";
+import { streamChat } from "@/lib/api";
 
 interface Message {
   role: "user" | "assistant";
@@ -10,19 +11,53 @@ interface Message {
 
 export default function TutorPage() {
   const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", content: "Hi! I'm your AI English tutor. How can I help you today? 你好！我是你的 AI 英语导师，有什么可以帮你的？" },
+    {
+      role: "assistant",
+      content:
+        "Hi! I'm your AI English tutor. How can I help you today? 你好！我是你的 AI 英语导师，有什么可以帮你的？",
+    },
   ]);
   const [input, setInput] = useState("");
+  const [streaming, setStreaming] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    setMessages((prev) => [...prev, { role: "user", content: input }]);
-    // TODO: 接入 SSE 流式 API
-    setMessages((prev) => [
-      ...prev,
-      { role: "assistant", content: "（AI 回复将在接入后端后显示）" },
-    ]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || streaming) return;
     setInput("");
+
+    const userMsg: Message = { role: "user", content: text };
+    setMessages((prev) => [...prev, userMsg]);
+
+    const history = messages.map((m) => ({ role: m.role, content: m.content }));
+    setStreaming(true);
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
+    try {
+      await streamChat(text, history, (chunk) => {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          updated[updated.length - 1] = { ...last, content: last.content + chunk };
+          return updated;
+        });
+      });
+    } catch {
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          role: "assistant",
+          content: "抱歉，连接出现问题，请稍后再试。",
+        };
+        return updated;
+      });
+    } finally {
+      setStreaming(false);
+    }
   };
 
   return (
@@ -32,6 +67,7 @@ export default function TutorPage() {
         {messages.map((msg, i) => (
           <ChatMessage key={i} role={msg.role} content={msg.content} />
         ))}
+        <div ref={bottomRef} />
       </div>
       <div className="flex gap-2">
         <input
@@ -39,13 +75,15 @@ export default function TutorPage() {
           placeholder="输入你的问题..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSend()}
+          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+          disabled={streaming}
         />
         <button
           onClick={handleSend}
-          className="bg-blue-500 text-white px-5 py-2 rounded-lg text-sm hover:bg-blue-600 transition-colors"
+          disabled={streaming}
+          className="bg-blue-500 text-white px-5 py-2 rounded-lg text-sm hover:bg-blue-600 transition-colors disabled:opacity-50"
         >
-          发送
+          {streaming ? "..." : "发送"}
         </button>
       </div>
     </div>

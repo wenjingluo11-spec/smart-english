@@ -35,11 +35,28 @@ async def submit_writing(
     await db.commit()
     await db.refresh(submission)
 
-    # TODO: 异步批改，这里先同步返回占位
+    # 调用 LLM 批改
+    try:
+        import json
+        grading_text = GRADING_PROMPT.format(
+            grade=user.grade, prompt=req.prompt, content=req.content
+        )
+        raw = await chat_once(
+            [{"role": "user", "content": grading_text}],
+            system_prompt="你是一位专业的英语写作批改老师，请严格按照要求的 JSON 格式返回批改结果。",
+        )
+        feedback = json.loads(raw)
+        submission.score = feedback.get("score")
+        submission.feedback_json = feedback
+        await db.commit()
+        await db.refresh(submission)
+    except Exception:
+        feedback = None
+
     return WritingFeedback(
         id=submission.id,
-        score=None,
-        feedback_json=None,
+        score=submission.score,
+        feedback_json=submission.feedback_json,
         created_at=submission.created_at.isoformat(),
     )
 
