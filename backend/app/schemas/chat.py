@@ -9,3 +9,4 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = []
+    mode: str = "free"  # free / grammar / speaking / explain

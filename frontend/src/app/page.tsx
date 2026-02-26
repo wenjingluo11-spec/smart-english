@@ -1,46 +1,76 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import StatOrbit from "@/components/dashboard/stat-orbit";
+import MissionBoard from "@/components/dashboard/mission-board";
+import ConstellationMap from "@/components/dashboard/constellation-map";
+import PageTransition from "@/components/ui/page-transition";
+
+interface DashboardData {
+  today_practice: number;
+  streak_days: number;
+  vocab_mastery_rate: number;
+  level: number;
+  total_xp: number;
+  xp_for_next: number;
+  cefr: string;
+}
+
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 6) return "夜深了，注意休息";
+  if (h < 12) return "早上好，开始新的一天";
+  if (h < 18) return "下午好，继续加油";
+  return "晚上好，坚持学习";
+}
+
 export default function Dashboard() {
-  const quickLinks = [
-    { title: "AI 导师", desc: "和 AI 老师对话学英语", href: "/tutor", icon: "🤖" },
-    { title: "智能题库", desc: "按知识点刷题练习", href: "/practice", icon: "📝" },
-    { title: "写作批改", desc: "提交作文获取 AI 批改", href: "/writing", icon: "✍️" },
-    { title: "阅读训练", desc: "分级阅读材料", href: "/reading", icon: "📖" },
-  ];
+  const [data, setData] = useState<DashboardData | null>(null);
+
+  useEffect(() => {
+    api.get<DashboardData>("/stats/dashboard").then(setData).catch(() => {});
+  }, []);
 
   return (
-    <div className="max-w-4xl">
-      <h2 className="text-xl font-semibold text-gray-800 mb-6">学习主页</h2>
-
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        {quickLinks.map((item) => (
-          <a
-            key={item.href}
-            href={item.href}
-            className="bg-white rounded-xl p-5 border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
-          >
-            <div className="text-2xl mb-2">{item.icon}</div>
-            <h3 className="font-medium text-gray-800">{item.title}</h3>
-            <p className="text-sm text-gray-500 mt-1">{item.desc}</p>
-          </a>
-        ))}
-      </div>
-
-      <div className="bg-white rounded-xl p-5 border border-gray-200">
-        <h3 className="font-medium text-gray-800 mb-3">学习概览</h3>
-        <div className="grid grid-cols-3 gap-4 text-center">
-          <div>
-            <div className="text-2xl font-bold text-blue-600">0</div>
-            <div className="text-xs text-gray-500 mt-1">今日练习</div>
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-green-600">0</div>
-            <div className="text-xs text-gray-500 mt-1">连续学习天数</div>
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-purple-600">A1</div>
-            <div className="text-xs text-gray-500 mt-1">当前等级</div>
+    <PageTransition stagger>
+      <div className="max-w-4xl mx-auto">
+        {/* Hero greeting */}
+        <div className="relative mb-8 overflow-hidden">
+          <div className="decorative-blob" style={{ top: -80, right: -60 }} />
+          <h2 className="text-hero text-gradient" style={{ position: "relative", zIndex: 1 }}>
+            {getGreeting()}
+          </h2>
+          <p className="text-body mt-2" style={{ color: "var(--color-text-secondary)", position: "relative", zIndex: 1 }}>
+            继续你的英语之旅
+          </p>
+          <div className="flex items-center gap-3 mt-3" style={{ position: "relative", zIndex: 1 }}>
+            {(data?.streak_days ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-sm px-3 py-1 rounded-full" style={{ background: "linear-gradient(135deg, rgba(249,115,22,0.1), rgba(234,179,8,0.1))", color: "#f97316" }}>
+                🔥 连续 {data?.streak_days} 天
+              </span>
+            )}
+            {data?.cefr && (
+              <span className="pill-gradient text-xs">{data.cefr}</span>
+            )}
           </div>
         </div>
+
+        {/* Stat cards */}
+        <StatOrbit
+          todayPractice={data?.today_practice ?? 0}
+          streakDays={data?.streak_days ?? 0}
+          vocabRate={data?.vocab_mastery_rate ?? 0}
+        />
+
+        {/* Module quick entry grid */}
+        <div className="mb-6">
+          <ConstellationMap />
+        </div>
+
+        {/* Mission board */}
+        <MissionBoard />
       </div>
-    </div>
+    </PageTransition>
   );
 }

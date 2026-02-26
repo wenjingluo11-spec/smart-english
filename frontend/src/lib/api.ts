@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 async function request<T>(
   path: string,
@@ -25,6 +25,26 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body) }),
+  put: <T>(path: string, body: unknown) =>
+    request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
+  del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  upload: <T>(path: string, file: File, extraFields?: Record<string, string>) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const form = new FormData();
+    form.append("file", file);
+    if (extraFields) {
+      for (const [k, v] of Object.entries(extraFields)) form.append(k, v);
+    }
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${API_BASE}${path}`, { method: "POST", headers, body: form }).then(async (res) => {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || res.statusText);
+      }
+      return res.json() as Promise<T>;
+    });
+  },
 };
 
 /** SSE 流式请求，逐块回调 */

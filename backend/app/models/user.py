@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import String, DateTime, func
+from sqlalchemy import String, DateTime, Boolean, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models import Base
 
@@ -13,6 +13,7 @@ class User(Base):
     grade_level: Mapped[str] = mapped_column(String(10), default="初中")  # 小学/初中/高中
     grade: Mapped[str] = mapped_column(String(20), default="七年级")
     cefr_level: Mapped[str] = mapped_column(String(5), default="A1")
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

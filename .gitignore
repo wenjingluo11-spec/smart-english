@@ -28,6 +28,12 @@ out/
 # Docker
 docker-compose.override.yml
 
+# Database
+*.db
+
+# Uploads
+backend/uploads/
+
 # Alembic
 alembic/versions/*.pyc
 

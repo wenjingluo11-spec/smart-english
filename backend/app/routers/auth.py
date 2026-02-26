@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import RegisterRequest, LoginRequest, TokenResponse, UserResponse
-from app.services.auth import hash_password, verify_password, create_token, decode_token
+from app.services.auth import hash_password, verify_password, create_token, decode_token, validate_password, validate_phone
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -27,6 +27,12 @@ async def get_current_user(
 
 @router.post("/register", response_model=TokenResponse)
 async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    phone_err = validate_phone(req.phone)
+    if phone_err:
+        raise HTTPException(status_code=400, detail=phone_err)
+    pwd_err = validate_password(req.password)
+    if pwd_err:
+        raise HTTPException(status_code=400, detail=pwd_err)
     existing = await db.execute(select(User).where(User.phone == req.phone))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="手机号已注册")

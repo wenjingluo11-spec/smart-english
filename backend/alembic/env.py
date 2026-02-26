@@ -16,6 +16,24 @@ from app.models.learning import LearningRecord  # noqa: F401
 from app.models.writing import WritingSubmission  # noqa: F401
 from app.models.reading import ReadingMaterial  # noqa: F401
 from app.models.vocabulary import UserVocabulary  # noqa: F401
+from app.models.gamification import UserXP, Achievement, DailyMission  # noqa: F401
+from app.models.screenshot import ScreenshotLesson  # noqa: F401
+from app.models.clinic import ErrorPattern, TreatmentPlan  # noqa: F401
+from app.models.story import StoryTemplate, StorySession, StoryChapter  # noqa: F401
+from app.models.knowledge import KnowledgeNode, KnowledgeEdge, UserNodeStatus  # noqa: F401
+from app.models.arena import BattleSession, PlayerRating  # noqa: F401
+from app.models.quest import QuestTemplate, UserQuest  # noqa: F401
+from app.models.error_notebook import ErrorNotebookEntry  # noqa: F401
+from app.models.learning_time import LearningTimeLog  # noqa: F401
+from app.models.onboarding import OnboardingProfile  # noqa: F401
+from app.models.textbook import TextbookVersion, TextbookUnit, UserTextbookSetting  # noqa: F401
+from app.models.grammar import GrammarTopic, GrammarExercise, UserGrammarProgress  # noqa: F401
+from app.models.notification import Notification  # noqa: F401
+from app.models.exam import (  # noqa: F401
+    ExamProfile, DiagnosticSession, ExamKnowledgePoint, KnowledgeMastery,
+    ExamQuestion, MockExam, WeaknessBreakthrough, ScorePrediction,
+    FlowSession, ExamTimeRecord, ErrorGene, CustomQuizSession, DailySprintPlan,
+)
 
 target_metadata = Base.metadata
 

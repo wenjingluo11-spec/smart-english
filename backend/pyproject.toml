@@ -7,6 +7,7 @@ dependencies = [
     "uvicorn[standard]>=0.34",
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.30",
+    "aiosqlite>=0.20",
     "alembic>=1.14",
     "pydantic-settings>=2.7",
     "httpx>=0.28",
@@ -14,6 +15,7 @@ dependencies = [
     "passlib[bcrypt]>=1.7",
     "redis>=5.0",
     "sse-starlette>=2.0",
+    "python-multipart>=0.0.9",
 ]
 
 [build-system]

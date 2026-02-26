@@ -2,14 +2,14 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql+asyncpg://smarteng:smarteng123@localhost:5432/smart_english"
+    database_url: str = "sqlite+aiosqlite:///./smart_english.db"
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
-    claude_api_key: str = ""
-    claude_model: str = "claude-sonnet-4-20250514"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8081"]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
