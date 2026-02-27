@@ -102,12 +102,37 @@ async def chat_once_json(system_prompt: str, user_prompt: str) -> dict:
 
 
 async def judge_answer(question_content: str, reference_answer: str, student_answer: str) -> dict:
-    """用 LLM 判断学生答案是否正确。"""
+    """用 LLM 判断学生答案是否正确 — 认知增强模式。
+
+    返回不仅包含对错判定，还包含"学霸怎么看出来的"审题思路。
+    """
     system_prompt = (
-        "你是一个英语题目判题助手。根据题目内容和参考解析，判断学生的答案是否正确。\n"
-        "对于选择题，比较选项字母即可；对于填空题，允许大小写和空格差异；对于主观题，根据语义判断。\n"
+        "你是一个英语认知增强助手。判断学生答案后，重点告诉学生「学霸是怎么看出来的」。\n"
+        "不要只说「答案是B因为...」，而要说「注意到题干中的xxx信号词，学霸会先看xxx，然后...」\n"
+        "对于选择题，比较选项字母即可；对于填空题，允许大小写和空格差异；对于主观题，根据语义判断。\n\n"
+        "核心原则：认知增强，不是认知卸载。不要直接给解题思路，而是引导学生自己发现。\n"
+        "当学生答错时，提供3级渐进式提示（hint_levels），从模糊到具体，让学生主动思考：\n"
+        "- Level 1：方向性提示（比如'注意看第三段的转折词'）\n"
+        "- Level 2：缩小范围（比如'but后面的那句话和选项B有什么关系？'）\n"
+        "- Level 3：接近答案（比如'作者用but转折，说明态度和前文相反，哪个选项表达了相反的态度？'）\n\n"
         "你必须返回且仅返回一个 JSON 对象，格式如下（不要包含 markdown 代码块标记）：\n"
-        '{"is_correct": true/false, "correct_answer": "简短正确答案", "explanation": "判分说明"}'
+        "{\n"
+        '  "is_correct": true/false,\n'
+        '  "correct_answer": "简短正确答案",\n'
+        '  "explanation": "传统解释（保留兼容）",\n'
+        '  "how_to_spot": "学霸是怎么看出来的——用一两句话描述审题思路",\n'
+        '  "key_clues": [\n'
+        '    {"text": "题目中的原文关键词/短语", "role": "这个线索的作用"}\n'
+        "  ],\n"
+        '  "common_trap": "这道题常见的陷阱是什么",\n'
+        '  "method": "解题方法论名称+简述",\n'
+        '  "hint_levels": [\n'
+        '    "Level1: 方向性提示，不暴露答案，引导学生往正确方向看",\n'
+        '    "Level2: 缩小范围，指向具体的句子或词，但仍需学生自己判断",\n'
+        '    "Level3: 接近答案，几乎点明，但仍以提问方式引导学生得出结论"\n'
+        "  ],\n"
+        '  "guided_discovery": "用提问方式引导学生自己推导出答案，比如：你注意到xxx了吗？如果xxx，那说明什么？"\n'
+        "}"
     )
     messages = [
         {
@@ -116,7 +141,7 @@ async def judge_answer(question_content: str, reference_answer: str, student_ans
                 f"【题目】\n{question_content}\n\n"
                 f"【参考解析】\n{reference_answer}\n\n"
                 f"【学生答案】\n{student_answer}\n\n"
-                "请判断学生答案是否正确，返回 JSON。"
+                "请判断学生答案是否正确，并用认知增强模式返回 JSON。"
             ),
         }
     ]
@@ -131,6 +156,14 @@ async def judge_answer(question_content: str, reference_answer: str, student_ans
             "is_correct": bool(result.get("is_correct", False)),
             "correct_answer": str(result.get("correct_answer", "")),
             "explanation": str(result.get("explanation", "")),
+            # 认知增强新字段
+            "how_to_spot": str(result.get("how_to_spot", "")),
+            "key_clues": result.get("key_clues", []),
+            "common_trap": str(result.get("common_trap", "")),
+            "method": str(result.get("method", "")),
+            # V3: 引导发现模式
+            "hint_levels": result.get("hint_levels", []),
+            "guided_discovery": str(result.get("guided_discovery", "")),
         }
     except Exception as e:
         import logging
@@ -139,4 +172,10 @@ async def judge_answer(question_content: str, reference_answer: str, student_ans
             "is_correct": False,
             "correct_answer": "",
             "explanation": "判题服务暂时不可用，请稍后重试",
+            "how_to_spot": "",
+            "key_clues": [],
+            "common_trap": "",
+            "method": "",
+            "hint_levels": [],
+            "guided_discovery": "",
         }

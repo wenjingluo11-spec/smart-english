@@ -1,15 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useExamStore } from "@/stores/exam";
+import { api } from "@/lib/api";
+import { tracker } from "@/lib/behavior-tracker";
 import MasteryBar from "@/components/exam/mastery-bar";
 import AnswerFeedback from "@/components/exam/answer-feedback";
+import AudioPlayer from "@/components/cognitive/AudioPlayer";
+import ClozePassageReader from "@/components/reading/cloze-passage-reader";
 
 const SECTION_LABELS: Record<string, string> = {
   listening: "听力理解", reading: "阅读理解", cloze: "完形填空",
   grammar_fill: "语法填空", error_correction: "短文改错", writing: "书面表达",
 };
+
+interface ClozeAnalysis {
+  blanks: { blank_index: number; context_clues: { text: string; position: "before" | "after"; clue_type: string; hint: string }[]; blank_type: string; strategy: string }[];
+  overview_strategy: string;
+  passage_keywords: string[];
+  difficulty_blanks: number[];
+  solving_order: string;
+}
 
 export default function SectionTrainingPage() {
   const params = useParams();
@@ -21,9 +33,44 @@ export default function SectionTrainingPage() {
   const [feedback, setFeedback] = useState<Record<string, unknown> | null>(null);
   const [answeredCount, setAnsweredCount] = useState(0);
 
+  // V3.2: cloze cognitive enhancement
+  const [clozeAnalysis, setClozeAnalysis] = useState<ClozeAnalysis | null>(null);
+  const [clozeAnalysisLoading, setClozeAnalysisLoading] = useState(false);
+  const [activeBlank, setActiveBlank] = useState<number | null>(null);
+
   useEffect(() => {
     if (profile) fetchTrainingQuestions(section, 10);
   }, [profile, section, fetchTrainingQuestions]);
+
+  // V3.2: load cloze analysis when passage_text is available
+  const q = trainingQuestions[currentIndex];
+
+  // V4.1: track question view timing
+  const viewTrackerRef = useRef<{ end: () => void } | null>(null);
+  useEffect(() => {
+    if (!q) return;
+    viewTrackerRef.current?.end();
+    viewTrackerRef.current = tracker.trackQuestionView(q.id, section);
+    return () => { viewTrackerRef.current?.end(); viewTrackerRef.current = null; };
+  }, [q?.id, section]);
+
+  useEffect(() => {
+    if (section !== "cloze" || !q?.passage_text) return;
+    setClozeAnalysis(null);
+    setClozeAnalysisLoading(true);
+    setActiveBlank(null);
+    api.post<ClozeAnalysis>("/exam/cloze/analyze", {
+      passage_text: q.passage_text,
+      questions: trainingQuestions.map((tq) => ({ content: tq.content, options: tq.options })),
+    })
+      .then(setClozeAnalysis)
+      .catch(() => setClozeAnalysis(null))
+      .finally(() => setClozeAnalysisLoading(false));
+  }, [section, q?.passage_text, q?.id]);
+
+  const handleBlankClick = useCallback((index: number) => {
+    setActiveBlank((prev) => (prev === index ? null : index));
+  }, []);
 
   const handleSubmit = async () => {
     if (!selectedAnswer || !trainingQuestions[currentIndex]) return;
@@ -38,7 +85,6 @@ export default function SectionTrainingPage() {
     if (currentIndex + 1 < trainingQuestions.length) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      // 加载更多题目
       fetchTrainingQuestions(section, 10);
       setCurrentIndex(0);
     }
@@ -51,8 +97,6 @@ export default function SectionTrainingPage() {
       </div>
     );
   }
-
-  const q = trainingQuestions[currentIndex];
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -78,6 +122,18 @@ export default function SectionTrainingPage() {
         </div>
       ) : (
         <>
+          {/* V3.2: Cloze passage with cognitive enhancement */}
+          {section === "cloze" && q.passage_text && (
+            <ClozePassageReader
+              passageText={q.passage_text}
+              questions={trainingQuestions.map((tq) => ({ id: tq.id, content: tq.content, options: tq.options }))}
+              analysis={clozeAnalysis}
+              analysisLoading={clozeAnalysisLoading}
+              activeBlank={activeBlank}
+              onBlankClick={handleBlankClick}
+            />
+          )}
+
           {/* Question card */}
           <div className="p-5 rounded-2xl" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
             <div className="flex items-center gap-2 mb-3">
@@ -89,7 +145,8 @@ export default function SectionTrainingPage() {
               )}
             </div>
 
-            {q.passage_text && (
+            {/* Non-cloze passage text (cloze uses ClozePassageReader above) */}
+            {q.passage_text && section !== "cloze" && (
               <div className="mb-4 p-3 rounded-lg text-sm leading-relaxed" style={{ background: "var(--color-bg)", color: "var(--color-text)" }}>
                 {q.passage_text}
               </div>
@@ -98,6 +155,9 @@ export default function SectionTrainingPage() {
             <p className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: "var(--color-text)" }}>
               {q.content}
             </p>
+            <div className="mt-2">
+              <AudioPlayer text={q.content} compact label="朗读题目" />
+            </div>
 
             {q.options.length > 0 ? (
               <div className="mt-4 space-y-2">
@@ -127,7 +187,7 @@ export default function SectionTrainingPage() {
           </div>
 
           {/* Feedback */}
-          {feedback && <AnswerFeedback feedback={feedback} />}
+          {feedback && <AnswerFeedback feedback={feedback} questionId={q.id} questionContent={q.content} source="exam" />}
 
           {/* Action button */}
           {!feedback ? (

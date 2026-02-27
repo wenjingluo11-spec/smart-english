@@ -126,6 +126,24 @@ async def submit_answer(
     from app.services.llm import judge_answer
     result = await judge_answer(question.content, question.answer, req.answer)
 
+    # 题眼分析（认知增强）— 答题后自动触发
+    from app.services.question_analysis import analyze_question
+    options_text = ""
+    if question.options_json:
+        import json as _json
+        try:
+            opts = _json.loads(question.options_json) if isinstance(question.options_json, str) else question.options_json
+            options_text = "\n".join(f"{k}. {v}" for k, v in opts.items())
+        except Exception:
+            pass
+    analysis = await analyze_question(
+        db=db,
+        question_content=question.content,
+        question_type=question.question_type or "",
+        options=options_text,
+        question_id=question.id,
+    )
+
     record = LearningRecord(
         user_id=user.id,
         question_id=question.id,
@@ -163,6 +181,16 @@ async def submit_answer(
         "is_correct": result["is_correct"],
         "correct_answer": result["correct_answer"],
         "explanation": result["explanation"],
+        # 认知增强字段
+        "how_to_spot": result.get("how_to_spot", ""),
+        "key_clues": result.get("key_clues", []),
+        "common_trap": result.get("common_trap", ""),
+        "method": result.get("method", ""),
+        # V3: 引导发现模式
+        "hint_levels": result.get("hint_levels", []),
+        "guided_discovery": result.get("guided_discovery", ""),
+        # 题眼分析
+        "analysis": analysis,
         "xp": xp_result,
         "mission": mission_result,
     }

@@ -19,6 +19,17 @@ export interface SubmitResult {
   is_correct: boolean;
   correct_answer: string;
   explanation: string;
+  // 认知增强字段
+  how_to_spot?: string;
+  key_clues?: { text: string; role: string }[];
+  common_trap?: string;
+  method?: string;
+  analysis?: {
+    key_phrases: { text: string; role: string; importance: string; hint: string }[];
+    reading_order: { step: number; target: string; action: string; reason: string }[];
+    strategy: string;
+    distractors: { option: string; trap: string }[];
+  };
 }
 
 export interface WritingFeedback {

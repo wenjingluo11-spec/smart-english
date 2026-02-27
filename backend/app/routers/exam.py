@@ -31,6 +31,7 @@ from app.services.exam_error_gene import analyze_error_genes, get_error_genes, g
 from app.services.exam_custom import generate_custom_quiz, submit_custom_quiz, get_custom_history
 from app.services.exam_sprint_plan import get_or_generate_sprint_plan, complete_sprint_task
 from app.services.exam_replay import generate_replay_data
+from app.services.cloze_analysis import analyze_cloze
 from app.services.xp import award_xp
 from app.services.missions import update_mission_progress
 
@@ -239,6 +240,32 @@ async def training_submit(
     result = await submit_training_answer(user.id, req.question_id, req.answer, db)
     if "error" in result:
         raise HTTPException(400, result["error"])
+
+    # 题眼分析（认知增强）— 答题后自动触发
+    from app.services.question_analysis import analyze_question
+    from app.models.exam import ExamQuestion
+    q_result = await db.execute(select(ExamQuestion).where(ExamQuestion.id == req.question_id))
+    eq = q_result.scalar_one_or_none()
+    if eq:
+        options_text = ""
+        if eq.options_json:
+            try:
+                opts = json.loads(eq.options_json) if isinstance(eq.options_json, str) else eq.options_json
+                if isinstance(opts, dict):
+                    options_text = "\n".join(f"{k}. {v}" for k, v in opts.items())
+                elif isinstance(opts, list):
+                    options_text = "\n".join(str(o) for o in opts)
+            except Exception:
+                pass
+        analysis = await analyze_question(
+            db=db,
+            question_content=eq.content,
+            question_type=eq.section or "",
+            options=options_text,
+            question_id=eq.id,
+        )
+        result["analysis"] = analysis
+
     if result.get("is_correct"):
         xp_result = await award_xp(user.id, "training_correct", db)
         await update_mission_progress(user.id, "exam_training", db)
@@ -496,6 +523,32 @@ async def flow_answer(
     )
     if "error" in result:
         raise HTTPException(400, result["error"])
+
+    # 题眼分析（认知增强）— 答题后自动触发
+    from app.services.question_analysis import analyze_question
+    from app.models.exam import ExamQuestion
+    q_result = await db.execute(select(ExamQuestion).where(ExamQuestion.id == req.question_id))
+    eq = q_result.scalar_one_or_none()
+    if eq:
+        options_text = ""
+        if eq.options_json:
+            try:
+                opts = json.loads(eq.options_json) if isinstance(eq.options_json, str) else eq.options_json
+                if isinstance(opts, dict):
+                    options_text = "\n".join(f"{k}. {v}" for k, v in opts.items())
+                elif isinstance(opts, list):
+                    options_text = "\n".join(str(o) for o in opts)
+            except Exception:
+                pass
+        analysis = await analyze_question(
+            db=db,
+            question_content=eq.content,
+            question_type=eq.section or "",
+            options=options_text,
+            question_id=eq.id,
+        )
+        result["analysis"] = analysis
+
     # XP & missions
     await award_xp(user.id, "flow_question", db)
     if result.get("milestone"):
@@ -686,4 +739,25 @@ async def replay_data(
     if "error" in result:
         raise HTTPException(400, result["error"])
     await db.commit()
+    return result
+
+
+# ── V3.2 完形填空认知增强 ──
+
+from pydantic import BaseModel as _BaseModel
+
+
+class ClozeAnalyzeRequest(_BaseModel):
+    passage_text: str
+    questions: list[dict]
+
+
+@router.post("/cloze/analyze")
+async def cloze_analyze(
+    req: ClozeAnalyzeRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """分析完形填空的语境线索和解题策略。"""
+    result = await analyze_cloze(db, req.passage_text, req.questions)
     return result

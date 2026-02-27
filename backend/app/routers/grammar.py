@@ -8,6 +8,7 @@ from app.database import get_db
 from app.routers.auth import get_current_user
 from app.models.user import User
 from app.models.grammar import GrammarTopic, GrammarExercise, UserGrammarProgress
+from app.services.grammar_cognitive import analyze_sentence_structures, compare_grammar
 
 router = APIRouter(prefix="/grammar", tags=["grammar"])
 
@@ -167,3 +168,39 @@ async def submit_exercise(
         "mastery": progress.mastery,
         "xp": xp_result,
     }
+
+
+# ── V3.4 语法认知增强 ──
+
+from pydantic import BaseModel as _BaseModel
+
+
+class SentenceStructureRequest(_BaseModel):
+    sentences: list[str]
+    grammar_topic: str = ""
+
+
+class GrammarCompareRequest(_BaseModel):
+    correct_sentence: str
+    wrong_sentence: str
+    grammar_topic: str = ""
+
+
+@router.post("/analyze-structures")
+async def grammar_analyze_structures(
+    req: SentenceStructureRequest,
+    user: User = Depends(get_current_user),
+):
+    """分析句子的语法结构，用于可视化展示。"""
+    result = await analyze_sentence_structures(req.sentences, req.grammar_topic)
+    return result
+
+
+@router.post("/compare")
+async def grammar_compare(
+    req: GrammarCompareRequest,
+    user: User = Depends(get_current_user),
+):
+    """对比正确和错误句子的语法差异。"""
+    result = await compare_grammar(req.correct_sentence, req.wrong_sentence, req.grammar_topic)
+    return result

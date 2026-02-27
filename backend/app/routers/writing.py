@@ -7,6 +7,7 @@ from app.models.user import User
 from app.models.writing import WritingSubmission
 from app.schemas.writing import WritingSubmitRequest, WritingFeedback
 from app.services.llm import chat_once
+from app.services.writing_cognitive import get_realtime_hint, review_paragraph
 
 router = APIRouter(prefix="/writing", tags=["writing"])
 
@@ -146,3 +147,52 @@ async def writing_history(
         .limit(20)
     )
     return result.scalars().all()
+
+
+# ── V3.3 写作认知增强 ──
+
+from pydantic import BaseModel as _BaseModel
+
+
+class RealtimeHintRequest(_BaseModel):
+    prompt: str
+    full_content: str
+    current_text: str
+
+
+class ParagraphReviewRequest(_BaseModel):
+    prompt: str
+    full_content: str
+    paragraph: str
+    paragraph_index: int = 0
+
+
+@router.post("/realtime-hint")
+async def writing_realtime_hint(
+    req: RealtimeHintRequest,
+    user: User = Depends(get_current_user),
+):
+    """写作过程中实时提示 — 分析刚写的内容，给出方向性引导。"""
+    result = await get_realtime_hint(
+        current_text=req.current_text,
+        full_content=req.full_content,
+        prompt=req.prompt,
+        grade=user.grade or "",
+    )
+    return result
+
+
+@router.post("/paragraph-review")
+async def writing_paragraph_review(
+    req: ParagraphReviewRequest,
+    user: User = Depends(get_current_user),
+):
+    """段落审视 — 写完一段后快速给出段落层面反馈。"""
+    result = await review_paragraph(
+        paragraph=req.paragraph,
+        full_content=req.full_content,
+        prompt=req.prompt,
+        paragraph_index=req.paragraph_index,
+        grade=user.grade or "",
+    )
+    return result

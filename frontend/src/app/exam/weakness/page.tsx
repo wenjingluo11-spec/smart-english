@@ -4,11 +4,17 @@ import { useEffect, useState } from "react";
 import { useExamStore } from "@/stores/exam";
 import Link from "next/link";
 import MasteryBar from "@/components/exam/mastery-bar";
+import AudioPlayer from "@/components/cognitive/AudioPlayer";
+import ExpertDemo from "@/components/cognitive/ExpertDemo";
+import CognitiveFeedback from "@/components/cognitive/CognitiveFeedback";
+import { useEnhancementConfig } from "@/hooks/use-enhancement-config";
+import { tracker } from "@/lib/behavior-tracker";
 
 const FREQ_LABELS: Record<string, string> = { high: "高频", medium: "中频", low: "低频" };
 const FREQ_COLORS: Record<string, string> = { high: "#ef4444", medium: "#f59e0b", low: "#6b7280" };
 
 export default function WeaknessPage() {
+  const { config: enhConfig } = useEnhancementConfig();
   const {
     profile, weaknesses, currentBreakthrough, loading,
     fetchWeaknesses, startBreakthrough, submitBreakthroughExercise,
@@ -33,6 +39,7 @@ export default function WeaknessPage() {
     if (!currentBreakthrough || !selectedAnswer) return;
     const result = await submitBreakthroughExercise(currentBreakthrough.id, exerciseIndex, selectedAnswer);
     setFeedback(result);
+    tracker.track("answer_submit", { module: "exam" }, { event_data: { answer: selectedAnswer, is_correct: result?.is_correct } });
   };
 
   const handleNextExercise = () => {
@@ -155,14 +162,38 @@ export default function WeaknessPage() {
           </div>
 
           {feedback && (
-            <div className="p-4 rounded-xl"
-              style={{ background: (feedback.is_correct as boolean) ? "#f0fdf4" : "#fef2f2", border: `1px solid ${(feedback.is_correct as boolean) ? "#22c55e" : "#ef4444"}` }}>
-              <p className="text-sm font-medium" style={{ color: (feedback.is_correct as boolean) ? "#22c55e" : "#ef4444" }}>
-                {(feedback.is_correct as boolean) ? "✅ 正确！" : "❌ 错误"}
-              </p>
-              {!!feedback.explanation && (
-                <p className="text-sm mt-1" style={{ color: "var(--color-text-secondary)" }}>{String(feedback.explanation)}</p>
+            <div className="space-y-3">
+              <div className="p-4 rounded-xl"
+                style={{ background: (feedback.is_correct as boolean) ? "#f0fdf4" : "#fef2f2", border: `1px solid ${(feedback.is_correct as boolean) ? "#22c55e" : "#ef4444"}` }}>
+                <p className="text-sm font-medium" style={{ color: (feedback.is_correct as boolean) ? "#22c55e" : "#ef4444" }}>
+                  {(feedback.is_correct as boolean) ? "✅ 正确！" : "❌ 错误"}
+                </p>
+                {!!feedback.explanation && (
+                  <p className="text-sm mt-1" style={{ color: "var(--color-text-secondary)" }}>{String(feedback.explanation)}</p>
+                )}
+              </div>
+
+              {/* 学霸审题演示 — 答错时展示 */}
+              {!(feedback.is_correct as boolean) && currentExercise && enhConfig.show_expert_demo && (
+                <ExpertDemo
+                  questionText={currentExercise.question}
+                  questionId={bt.knowledge_point_id}
+                  source="exam"
+                />
               )}
+
+              {/* 统一认知反馈 */}
+              <CognitiveFeedback
+                data={{
+                  how_to_spot: feedback.how_to_spot as string | undefined,
+                  key_clues: feedback.key_clues as { text: string; role: string }[] | undefined,
+                  common_trap: feedback.common_trap as string | undefined,
+                  method: feedback.method as string | undefined,
+                }}
+              />
+
+              {/* 题目朗读 */}
+              <AudioPlayer text={currentExercise.question} compact label="朗读题目" />
             </div>
           )}
 

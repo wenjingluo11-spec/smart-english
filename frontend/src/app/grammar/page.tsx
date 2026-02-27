@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useGrammarStore } from "@/stores/grammar";
+import { api } from "@/lib/api";
+import { tracker } from "@/lib/behavior-tracker";
+import GrammarVisualizer, { GrammarCompareView } from "@/components/grammar/grammar-visualizer";
+import AudioPlayer from "@/components/cognitive/AudioPlayer";
 import PageTransition from "@/components/ui/page-transition";
 import Skeleton from "@/components/ui/skeleton";
 
@@ -25,14 +29,30 @@ export default function GrammarPage() {
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // V3.4: grammar cognitive enhancement
+  const [structureData, setStructureData] = useState<{ sentences: unknown[] } | null>(null);
+  const [structureLoading, setStructureLoading] = useState(false);
+  const [compareData, setCompareData] = useState<Record<string, unknown> | null>(null);
+
+  // V4.1: behavior tracking for exercises
+  const viewTrackerRef = useRef<{ end: () => void } | null>(null);
+  useEffect(() => {
+    if (view !== "practice" || !exercises[currentEx]) return;
+    viewTrackerRef.current?.end();
+    viewTrackerRef.current = tracker.trackQuestionView(exercises[currentEx].id, "grammar");
+    return () => { viewTrackerRef.current?.end(); viewTrackerRef.current = null; };
+  }, [view, currentEx, exercises]);
+
   useEffect(() => {
     fetchCategories();
     fetchTopics();
   }, [fetchCategories, fetchTopics]);
 
-  const openTopic = (id: number) => {
+  const openTopic = async (id: number) => {
     fetchTopicDetail(id);
     setView("detail");
+    setStructureData(null);
+    setCompareData(null);
   };
 
   const startPractice = (topicId: number) => {
@@ -49,6 +69,7 @@ export default function GrammarPage() {
     try {
       const res = await submitExercise(exercises[currentEx].id, answer);
       setResult(res);
+      tracker.track("answer_submit", { question_id: exercises[currentEx].id, module: "grammar" }, { event_data: { answer, is_correct: res.is_correct } });
     } catch { /* ignore */ }
     setSubmitting(false);
   };
@@ -58,6 +79,7 @@ export default function GrammarPage() {
       setCurrentEx(currentEx + 1);
       setAnswer("");
       setResult(null);
+      setCompareData(null);
     } else {
       setView("list");
       fetchTopics(selectedCategory || undefined);
@@ -169,12 +191,48 @@ export default function GrammarPage() {
 
             {topicDetail.examples.length > 0 && (
               <div className="rounded-xl border p-4" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
-                <h4 className="text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>例句</h4>
-                <div className="space-y-1.5">
-                  {topicDetail.examples.map((e, i) => (
-                    <div key={i} className="text-xs p-2 rounded-lg" style={{ background: "var(--color-border)", color: "var(--color-text)" }}>{e}</div>
-                  ))}
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium" style={{ color: "var(--color-text)" }}>例句</h4>
+                  {!structureData && !structureLoading && (
+                    <button
+                      onClick={async () => {
+                        setStructureLoading(true);
+                        try {
+                          const res = await api.post<{ sentences: unknown[] }>("/grammar/analyze-structures", {
+                            sentences: topicDetail.examples,
+                            grammar_topic: topicDetail.name,
+                          });
+                          setStructureData(res);
+                          tracker.track("sentence_parse_view", { module: "grammar" }, { event_data: { topic: topicDetail.name } });
+                        } catch { /* ignore */ }
+                        setStructureLoading(false);
+                      }}
+                      className="text-xs px-2.5 py-1 rounded-lg transition-all"
+                      style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6" }}
+                    >
+                      结构可视化
+                    </button>
+                  )}
+                  {structureLoading && (
+                    <span className="text-xs flex items-center gap-1" style={{ color: "var(--color-text-secondary)" }}>
+                      <span className="animate-spin">⟳</span> 分析中...
+                    </span>
+                  )}
                 </div>
+
+                {/* V3.4: Structure visualization or plain examples */}
+                {structureData && structureData.sentences?.length > 0 ? (
+                  <GrammarVisualizer sentences={structureData.sentences as never[]} />
+                ) : (
+                  <div className="space-y-1.5">
+                    {topicDetail.examples.map((e, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs p-2 rounded-lg" style={{ background: "var(--color-border)", color: "var(--color-text)" }}>
+                        <span className="flex-1">{e}</span>
+                        <AudioPlayer text={e} compact />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -256,13 +314,47 @@ export default function GrammarPage() {
             </div>
 
             {result && (
-              <div className={`rounded-xl p-3 mb-4 text-sm ${result.is_correct ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-                <div className="font-medium mb-1">{result.is_correct ? "正确！" : "错误"}</div>
-                {!result.is_correct && <div className="text-xs">正确答案：{String(result.correct_answer)}</div>}
-                {result.explanation ? <div className="text-xs mt-1">{String(result.explanation)}</div> : null}
-                {result.mastery !== undefined ? (
-                  <div className="text-xs mt-1">掌握度：{Number(result.mastery)}%</div>
-                ) : null}
+              <div className="space-y-3 mb-4">
+                <div className={`rounded-xl p-3 text-sm ${result.is_correct ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                  <div className="font-medium mb-1">{result.is_correct ? "正确！" : "错误"}</div>
+                  {!result.is_correct && <div className="text-xs">正确答案：{String(result.correct_answer)}</div>}
+                  {result.explanation ? <div className="text-xs mt-1">{String(result.explanation)}</div> : null}
+                  {result.mastery !== undefined ? (
+                    <div className="text-xs mt-1">掌握度：{Number(result.mastery)}%</div>
+                  ) : null}
+                </div>
+
+                {/* V3.4: Audio comparison — hear correct vs your answer */}
+                <div className="flex items-center gap-2">
+                  <AudioPlayer text={exercises[currentEx].content.replace(/_{2,}/, String(result.correct_answer))} compact label="听正确发音" />
+                  {!result.is_correct && (
+                    <AudioPlayer text={exercises[currentEx].content.replace(/_{2,}/, answer)} compact label="听你的答案" />
+                  )}
+                </div>
+
+                {/* V3.4: Grammar compare visualization for wrong answers */}
+                {!result.is_correct && compareData && (
+                  <GrammarCompareView data={compareData as never} />
+                )}
+                {!result.is_correct && !compareData && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await api.post<Record<string, unknown>>("/grammar/compare", {
+                          correct_sentence: exercises[currentEx].content.replace(/_{2,}/, String(result.correct_answer)),
+                          wrong_sentence: exercises[currentEx].content.replace(/_{2,}/, answer),
+                          grammar_topic: topicDetail?.name || "",
+                        });
+                        setCompareData(res);
+                        tracker.track("sentence_parse_view", { question_id: exercises[currentEx].id }, { event_data: { type: "grammar_compare" } });
+                      } catch { /* ignore */ }
+                    }}
+                    className="text-xs px-3 py-1.5 rounded-lg transition-all"
+                    style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6" }}
+                  >
+                    查看语法对比分析
+                  </button>
+                )}
               </div>
             )}
 

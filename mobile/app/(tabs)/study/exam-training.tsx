@@ -11,6 +11,10 @@ import {
 import { useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useExamStore } from "../../../stores/exam";
+import AudioPlayer from "../../../components/cognitive/AudioPlayer";
+import CognitiveFeedback from "../../../components/cognitive/CognitiveFeedback";
+import SyncReader from "../../../components/cognitive/SyncReader";
+import ExpertDemo from "../../../components/cognitive/ExpertDemo";
 
 const PRIMARY = "#4A90D9";
 const BG = "#F5F7FA";
@@ -235,6 +239,9 @@ export default function ExamTrainingScreen() {
             <Text style={styles.difficultyText}>难度 {question.difficulty}</Text>
           </View>
           <Text style={styles.questionText}>{question.content}</Text>
+          <View style={{ marginTop: 8 }}>
+            <AudioPlayer text={question.content} compact label="朗读" />
+          </View>
         </View>
 
         {question.options.map((opt, idx) => {
@@ -298,7 +305,14 @@ export default function ExamTrainingScreen() {
                 {feedback.is_correct ? "回答正确" : "回答错误"}
               </Text>
             </View>
-            {feedback.explanation ? (
+            {/* 认知增强反馈 */}
+            <CognitiveFeedback result={feedback as any} />
+            {/* V2: 视听同步跟读 */}
+            <SyncReader text={question.content} />
+            {/* V2: 学霸审题演示 */}
+            <ExpertDemo questionText={question.content} questionId={question.id} source="exam" />
+            {/* 传统解析兜底 */}
+            {!feedback.how_to_spot && feedback.explanation ? (
               <Text style={styles.feedbackExplanation}>
                 {String(feedback.explanation)}
               </Text>

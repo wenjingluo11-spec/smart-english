@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 import { useExamStore } from "@/stores/exam";
+import AudioPlayer from "@/components/cognitive/AudioPlayer";
+import ExpertDemo from "@/components/cognitive/ExpertDemo";
+import CognitiveFeedback from "@/components/cognitive/CognitiveFeedback";
+import { useEnhancementConfig } from "@/hooks/use-enhancement-config";
+import { tracker } from "@/lib/behavior-tracker";
 
 const QUICK_TAGS = [
   { label: "阅读理解", prompt: "阅读理解" },
@@ -15,10 +20,11 @@ const TOPIC_TAGS = [
 ];
 
 export default function CustomQuizPage() {
+  const { config: enhConfig } = useEnhancementConfig();
   const { currentCustomQuiz, loading, generateCustomQuiz, submitCustomQuiz } = useExamStore();
   const [prompt, setPrompt] = useState("");
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [result, setResult] = useState<{ score: number; total: number; accuracy: number; feedback: { index: number; is_correct: boolean; correct_answer: string; explanation: string }[] } | null>(null);
+  const [result, setResult] = useState<{ score: number; total: number; accuracy: number; feedback: { index: number; is_correct: boolean; correct_answer: string; explanation: string; how_to_spot?: string; key_clues?: { text: string; role: string }[]; common_trap?: string; method?: string }[] } | null>(null);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
@@ -31,6 +37,7 @@ export default function CustomQuizPage() {
     const answerList = Object.entries(answers).map(([idx, ans]) => ({ index: Number(idx), answer: ans }));
     const res = await submitCustomQuiz(answerList);
     setResult(res as typeof result);
+    tracker.track("answer_submit", { module: "exam" }, { event_data: { type: "custom_quiz", score: (res as { score?: number })?.score } });
   };
 
   const addTag = (tag: string) => {
@@ -60,7 +67,29 @@ export default function CustomQuizPage() {
                 <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>第 {i + 1} 题</span>
                 {!fb.is_correct && <span className="text-xs" style={{ color: "#ef4444" }}>正确答案：{fb.correct_answer}</span>}
               </div>
-              <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{fb.explanation}</p>
+
+              {/* 认知增强反馈 */}
+              {!fb.is_correct && enhConfig.show_expert_demo && (
+                <ExpertDemo
+                  questionText={currentCustomQuiz?.questions?.[i]?.question || `第${i+1}题`}
+                  questionId={i + 1}
+                  source="exam"
+                  className="mt-2"
+                />
+              )}
+              <CognitiveFeedback
+                data={{
+                  how_to_spot: fb.how_to_spot,
+                  key_clues: fb.key_clues,
+                  common_trap: fb.common_trap,
+                  method: fb.method,
+                }}
+                compact
+                className="mt-2"
+              />
+              {!fb.how_to_spot && fb.explanation && (
+                <p className="text-sm mt-1" style={{ color: "var(--color-text-secondary)" }}>{fb.explanation}</p>
+              )}
             </div>
           ))}
         </div>

@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { api } from "@/lib/api";
+import { tracker } from "@/lib/behavior-tracker";
+import { useEnhancementConfig } from "@/hooks/use-enhancement-config";
 import ScoreChart from "@/components/writing/score-chart";
 import HistoryTimeline from "@/components/writing/history-timeline";
+import WritingAssistant from "@/components/writing/writing-assistant";
 import XPToast from "@/components/ui/xp-toast";
 import PageTransition from "@/components/ui/page-transition";
 import Skeleton from "@/components/ui/skeleton";
@@ -47,6 +50,7 @@ interface RevisionGuide {
 type WritingStep = "topic" | "outline" | "draft" | "revision" | "submit" | "result";
 
 export default function WritingPage() {
+  const { config: enhConfig } = useEnhancementConfig();
   const [tab, setTab] = useState<"guided" | "free" | "history">("guided");
   const [step, setStep] = useState<WritingStep>("topic");
   const [prompt, setPrompt] = useState("");
@@ -82,6 +86,7 @@ export default function WritingPage() {
       const res = await api.post<Outline>("/writing/generate-outline", { prompt, content: "" });
       setOutline(res);
       setStep("outline");
+      tracker.track("hint_request", { module: "writing" }, { event_data: { type: "outline", prompt } });
     } catch { setError("生成提纲失败"); }
     setLoading(false);
   };
@@ -94,6 +99,7 @@ export default function WritingPage() {
       const res = await api.post<RevisionGuide>("/writing/revision-guide", { prompt, content });
       setRevisionGuide(res);
       setStep("revision");
+      tracker.track("hint_request", { module: "writing" }, { event_data: { type: "revision_guide", word_count: content.split(/\s+/).filter(Boolean).length } });
     } catch { setError("获取修改建议失败"); }
     setLoading(false);
   };
@@ -110,6 +116,7 @@ export default function WritingPage() {
       });
       setFeedback(res);
       setStep("result");
+      tracker.track("answer_submit", { module: "writing" }, { event_data: { score: res.score, word_count: content.split(/\s+/).filter(Boolean).length } });
       if (res.xp?.xp_gained) {
         setXpGained(res.xp.xp_gained);
         setXpTrigger((t) => t + 1);
@@ -281,37 +288,52 @@ export default function WritingPage() {
 
             {/* Step: Draft */}
             {step === "draft" && (
-              <div className="card-gradient-writing p-5 shadow-theme-sm">
-                <h3 className="text-sm font-medium mb-1" style={{ color: "var(--color-text)" }}>Step 3: 撰写草稿</h3>
-                <div className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>
-                  题目：{prompt} · 字数：{content.split(/\s+/).filter(Boolean).length} 词
+              <div className="space-y-3">
+                <div className="card-gradient-writing p-5 shadow-theme-sm">
+                  <h3 className="text-sm font-medium mb-1" style={{ color: "var(--color-text)" }}>Step 3: 撰写草稿</h3>
+                  <div className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>
+                    题目：{prompt} · 字数：{content.split(/\s+/).filter(Boolean).length} 词
+                  </div>
+                  <textarea
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    placeholder="Start writing your essay here..."
+                    className="w-full border rounded-xl p-3 text-sm resize-none focus:outline-none transition-all duration-200"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)", minHeight: 200 }}
+                    rows={10}
+                  />
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={handleGetRevision}
+                      disabled={loading || !content.trim()}
+                      className="flex-1 py-2.5 rounded-full text-sm font-medium disabled:opacity-30 transition-all duration-200 hover:scale-[1.02]"
+                      style={{ background: "rgba(var(--color-primary-rgb), 0.1)", color: "var(--color-primary)", border: "1px solid rgba(var(--color-primary-rgb), 0.2)" }}
+                    >
+                      {loading ? "分析中..." : "获取修改建议"}
+                    </button>
+                    <button
+                      onClick={() => setStep("submit")}
+                      disabled={!content.trim()}
+                      className="flex-1 py-2.5 rounded-full text-sm font-medium text-white disabled:opacity-30 transition-all duration-200 hover:scale-[1.02] shadow-theme-sm"
+                      style={{ background: "linear-gradient(135deg, var(--color-primary), var(--color-accent))" }}
+                    >
+                      跳过修改，直接提交
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder="Start writing your essay here..."
-                  className="w-full border rounded-xl p-3 text-sm resize-none focus:outline-none transition-all duration-200"
-                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)", minHeight: 200 }}
-                  rows={10}
-                />
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={handleGetRevision}
-                    disabled={loading || !content.trim()}
-                    className="flex-1 py-2.5 rounded-full text-sm font-medium disabled:opacity-30 transition-all duration-200 hover:scale-[1.02]"
-                    style={{ background: "rgba(var(--color-primary-rgb), 0.1)", color: "var(--color-primary)", border: "1px solid rgba(var(--color-primary-rgb), 0.2)" }}
-                  >
-                    {loading ? "分析中..." : "获取修改建议"}
-                  </button>
-                  <button
-                    onClick={() => setStep("submit")}
-                    disabled={!content.trim()}
-                    className="flex-1 py-2.5 rounded-full text-sm font-medium text-white disabled:opacity-30 transition-all duration-200 hover:scale-[1.02] shadow-theme-sm"
-                    style={{ background: "linear-gradient(135deg, var(--color-primary), var(--color-accent))" }}
-                  >
-                    跳过修改，直接提交
-                  </button>
-                </div>
+
+                {/* V3.3: Writing cognitive assistant */}
+                {enhConfig.auto_paragraph_review && (
+                  <WritingAssistant
+                    prompt={prompt}
+                    content={content}
+                    currentSentence={(() => {
+                      // Extract the last sentence being typed
+                      const sentences = content.split(/[.!?]\s+/);
+                      return sentences[sentences.length - 1] || "";
+                    })()}
+                  />
+                )}
               </div>
             )}
 

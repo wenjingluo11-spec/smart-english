@@ -11,6 +11,10 @@ import {
 } from "react-native";
 import { api } from "../../lib/api";
 import type { Question, SubmitResult } from "../../lib/types";
+import AudioPlayer from "../../components/cognitive/AudioPlayer";
+import CognitiveFeedback from "../../components/cognitive/CognitiveFeedback";
+import SyncReader from "../../components/cognitive/SyncReader";
+import ExpertDemo from "../../components/cognitive/ExpertDemo";
 
 const TYPES = ["单选", "完形填空", "阅读理解"];
 const DIFFICULTIES = [
@@ -124,6 +128,9 @@ export default function PracticeScreen() {
             <Text style={styles.qIdx}>{idx + 1}/{questions.length}</Text>
           </View>
           <Text style={styles.qContent}>{q.content}</Text>
+          <View style={{ marginTop: 8 }}>
+            <AudioPlayer text={q.content} compact label="朗读题目" />
+          </View>
 
           {q.options && q.options.length > 0 && (
             <View style={styles.options}>
@@ -171,7 +178,16 @@ export default function PracticeScreen() {
                 {result.is_correct ? "回答正确!" : "回答错误"}
               </Text>
               <Text style={styles.resultText}>正确答案: {result.correct_answer}</Text>
-              <Text style={styles.resultText}>{result.explanation}</Text>
+              {/* 认知增强反馈 */}
+              <CognitiveFeedback result={result} />
+              {/* V2: 视听同步跟读 */}
+              <SyncReader text={q.content} />
+              {/* V2: 学霸审题演示 */}
+              <ExpertDemo questionText={q.content} questionId={q.id} source="practice" />
+              {/* 传统解析兜底 */}
+              {!result.how_to_spot && result.explanation ? (
+                <Text style={styles.resultText}>{result.explanation}</Text>
+              ) : null}
               <TouchableOpacity style={styles.nextBtn} onPress={nextQuestion}>
                 <Text style={styles.nextBtnText}>下一题</Text>
               </TouchableOpacity>

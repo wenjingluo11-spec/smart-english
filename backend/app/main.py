@@ -15,6 +15,9 @@ from app.routers import textbook
 from app.routers import grammar
 from app.routers import admin
 from app.routers import notifications
+from app.routers import tts
+from app.routers import cognitive
+from app.routers import behavior
 
 app = FastAPI(title="Smart English API", version="0.1.0")
 
@@ -56,6 +59,9 @@ app.include_router(textbook.router)
 app.include_router(grammar.router)
 app.include_router(admin.router)
 app.include_router(notifications.router)
+app.include_router(tts.router)
+app.include_router(cognitive.router)
+app.include_router(behavior.router)
 
 
 @app.get("/")

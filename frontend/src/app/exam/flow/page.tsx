@@ -3,6 +3,11 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useExamStore } from "@/stores/exam";
 import { useRouter } from "next/navigation";
+import { tracker } from "@/lib/behavior-tracker";
+import { useEnhancementConfig } from "@/hooks/use-enhancement-config";
+import AudioPlayer from "@/components/cognitive/AudioPlayer";
+import ExpertDemo from "@/components/cognitive/ExpertDemo";
+import CognitiveFeedback from "@/components/cognitive/CognitiveFeedback";
 
 const SECTION_OPTIONS = [
   { value: "reading", label: "阅读理解" },
@@ -15,15 +20,39 @@ const MILESTONES = [5, 10, 20, 50, 100];
 
 export default function FlowPage() {
   const router = useRouter();
+  const { config: enhConfig } = useEnhancementConfig();
   const { flowState, flowReport, loading, startFlow, submitFlowAnswer, endFlow } = useExamStore();
 
   const [phase, setPhase] = useState<"select" | "playing" | "report">("select");
   const [section, setSection] = useState("reading");
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{ correct: boolean; explanation: string; milestone: number | null } | null>(null);
+  const [feedback, setFeedback] = useState<{
+    correct: boolean;
+    explanation: string;
+    milestone: number | null;
+    how_to_spot?: string;
+    key_clues?: { text: string; role: string }[];
+    common_trap?: string;
+    method?: string;
+    analysis?: {
+      key_phrases: { text: string; role: string; importance: string; hint: string }[];
+      reading_order: { step: number; target: string; action: string; reason: string }[];
+      strategy: string;
+      distractors: { option: string; trap: string }[];
+    };
+  } | null>(null);
   const [totalAnswered, setTotalAnswered] = useState(0);
   const [flashColor, setFlashColor] = useState<string | null>(null);
   const startTimeRef = useRef<number>(0);
+
+  // V4.1: behavior tracking
+  const viewTrackerRef = useRef<{ end: () => void } | null>(null);
+  useEffect(() => {
+    if (!flowState?.question) return;
+    viewTrackerRef.current?.end();
+    viewTrackerRef.current = tracker.trackQuestionView(flowState.question.id, "exam");
+    return () => { viewTrackerRef.current?.end(); viewTrackerRef.current = null; };
+  }, [flowState?.question?.id]);
 
   const handleStart = async () => {
     await startFlow(section);
@@ -40,21 +69,28 @@ export default function FlowPage() {
 
     const isCorrect = res.is_correct as boolean;
     setFlashColor(isCorrect ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)");
+    tracker.track("answer_submit", { question_id: flowState.question.id, module: "exam" }, { event_data: { answer, is_correct: isCorrect, response_ms: responseMs } });
     setFeedback({
       correct: isCorrect,
       explanation: (res.explanation as string) || "",
       milestone: (res.milestone as number) || null,
+      how_to_spot: (res.how_to_spot as string) || "",
+      key_clues: (res.key_clues as { text: string; role: string }[]) || [],
+      common_trap: (res.common_trap as string) || "",
+      method: (res.method as string) || "",
+      analysis: res.analysis as typeof feedback extends null ? never : NonNullable<typeof feedback>["analysis"],
     });
     setTotalAnswered((n) => n + 1);
 
-    // 自动切下一题
-    const delay = isCorrect ? 500 : 1500;
-    setTimeout(() => {
-      setSelectedAnswer(null);
-      setFeedback(null);
-      setFlashColor(null);
-      startTimeRef.current = Date.now();
-    }, delay);
+    // 自动切下一题：答对快切，答错需要手动点击（留时间看学霸演示）
+    if (isCorrect) {
+      setTimeout(() => {
+        setSelectedAnswer(null);
+        setFeedback(null);
+        setFlashColor(null);
+        startTimeRef.current = Date.now();
+      }, 500);
+    }
   }, [flowState, selectedAnswer, submitFlowAnswer]);
 
   const handleEnd = async () => {
@@ -189,6 +225,9 @@ export default function FlowPage() {
         )}
 
         <div className="w-full mb-6 text-center">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            {enhConfig.auto_tts && <AudioPlayer text={question.content} compact label="听题" />}
+          </div>
           <p className="text-lg font-medium leading-relaxed" style={{ color: "var(--color-text)" }}>
             {question.content}
           </p>
@@ -218,10 +257,46 @@ export default function FlowPage() {
           })}
         </div>
 
-        {/* 错误解析 */}
-        {feedback && !feedback.correct && feedback.explanation && (
-          <div className="w-full mt-4 p-3 rounded-xl text-sm" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}>
-            {feedback.explanation}
+        {/* 认知增强反馈（答错时显示） */}
+        {feedback && !feedback.correct && (
+          <div className="w-full mt-4 space-y-2">
+            {/* 学霸审题演示 */}
+            {enhConfig.show_expert_demo && (
+              <ExpertDemo
+                questionText={question.content}
+                questionId={question.id}
+                source="exam"
+              />
+            )}
+            {/* 统一认知反馈 */}
+            <CognitiveFeedback
+              data={{
+                how_to_spot: feedback.how_to_spot,
+                key_clues: feedback.key_clues,
+                common_trap: feedback.common_trap,
+                method: feedback.method,
+              }}
+              compact
+            />
+            {/* 兜底：如果没有认知增强字段，显示传统解析 */}
+            {!feedback.how_to_spot && !feedback.common_trap && !feedback.method && feedback.explanation && (
+              <div className="p-3 rounded-xl text-sm" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}>
+                {feedback.explanation}
+              </div>
+            )}
+            {/* 手动下一题按钮 */}
+            <button
+              onClick={() => {
+                setSelectedAnswer(null);
+                setFeedback(null);
+                setFlashColor(null);
+                startTimeRef.current = Date.now();
+              }}
+              className="w-full py-3 rounded-xl font-medium text-white mt-2"
+              style={{ background: "var(--color-primary)" }}
+            >
+              我看懂了，下一题
+            </button>
           </div>
         )}
       </div>

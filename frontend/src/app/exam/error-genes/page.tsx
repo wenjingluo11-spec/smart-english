@@ -2,6 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useExamStore } from "@/stores/exam";
+import AudioPlayer from "@/components/cognitive/AudioPlayer";
+import ExpertDemo from "@/components/cognitive/ExpertDemo";
+import CognitiveFeedback from "@/components/cognitive/CognitiveFeedback";
+import { useEnhancementConfig } from "@/hooks/use-enhancement-config";
+import { tracker } from "@/lib/behavior-tracker";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   active: { bg: "rgba(239,68,68,0.15)", text: "#ef4444", label: "活跃" },
@@ -10,10 +15,11 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
 };
 
 export default function ErrorGenesPage() {
+  const { config: enhConfig } = useEnhancementConfig();
   const { errorGenes, loading, fetchErrorGenes, analyzeErrorGenes, generateGeneFix, submitGeneFix } = useExamStore();
   const [selectedGene, setSelectedGene] = useState<number | null>(null);
   const [fixIndex, setFixIndex] = useState(0);
-  const [fixFeedback, setFixFeedback] = useState<{ correct: boolean; explanation: string } | null>(null);
+  const [fixFeedback, setFixFeedback] = useState<{ correct: boolean; explanation: string; how_to_spot?: string; common_trap?: string } | null>(null);
 
   useEffect(() => { fetchErrorGenes(); }, [fetchErrorGenes]);
 
@@ -23,7 +29,8 @@ export default function ErrorGenesPage() {
   const handleFixAnswer = async (answer: string) => {
     if (!gene) return;
     const res = await submitGeneFix(gene.id, fixIndex, answer);
-    setFixFeedback({ correct: res.is_correct as boolean, explanation: (res.explanation as string) || "" });
+    setFixFeedback({ correct: res.is_correct as boolean, explanation: (res.explanation as string) || "", how_to_spot: (res.how_to_spot as string) || "", common_trap: (res.common_trap as string) || "" });
+    tracker.track("answer_submit", { module: "exam" }, { event_data: { answer, is_correct: res.is_correct, gene_id: gene.id } });
     setTimeout(() => {
       setFixFeedback(null);
       if (fixIndex + 1 < (exercises?.length || 0)) {
@@ -33,7 +40,7 @@ export default function ErrorGenesPage() {
         setFixIndex(0);
         fetchErrorGenes();
       }
-    }, 1500);
+    }, fixFeedback?.correct ? 1500 : 4000);
   };
 
   // 修复练习界面
@@ -62,9 +69,30 @@ export default function ErrorGenesPage() {
           })}
         </div>
         {fixFeedback && (
-          <div className="mt-4 p-3 rounded-xl text-sm"
-            style={{ background: fixFeedback.correct ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)", color: fixFeedback.correct ? "#22c55e" : "#ef4444" }}>
-            {fixFeedback.correct ? "✓ 正确！" : "✗ 错误"} {fixFeedback.explanation}
+          <div className="mt-4 space-y-2">
+            <div className="p-3 rounded-xl text-sm"
+              style={{ background: fixFeedback.correct ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)", color: fixFeedback.correct ? "#22c55e" : "#ef4444" }}>
+              {fixFeedback.correct ? "✓ 正确！" : "✗ 错误"} {fixFeedback.explanation}
+            </div>
+            {/* 学霸审题演示 — 答错时展示 */}
+            {!fixFeedback.correct && gene && enhConfig.show_expert_demo && (
+              <ExpertDemo
+                questionText={ex.question}
+                questionId={gene.id}
+                source="exam"
+              />
+            )}
+            {/* 统一认知反馈 */}
+            {!fixFeedback.correct && (
+              <CognitiveFeedback
+                data={{
+                  how_to_spot: fixFeedback.how_to_spot,
+                  common_trap: fixFeedback.common_trap,
+                }}
+                compact
+              />
+            )}
+            <AudioPlayer text={ex.question} compact label="朗读题目" />
           </div>
         )}
       </div>

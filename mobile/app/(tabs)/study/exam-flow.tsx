@@ -11,6 +11,7 @@ import {
 import { useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useExamStore } from "../../../stores/exam";
+import AudioPlayer from "../../../components/cognitive/AudioPlayer";
 
 const PRIMARY = "#4A90D9";
 const BG = "#F5F7FA";
@@ -264,6 +265,9 @@ export default function ExamFlowScreen() {
         {/* Question card */}
         <View style={styles.questionCard}>
           <Text style={styles.questionContent}>{question.content}</Text>
+          <View style={{ marginTop: 8 }}>
+            <AudioPlayer text={question.content} compact label="听题" />
+          </View>
         </View>
 
         {/* Options */}
