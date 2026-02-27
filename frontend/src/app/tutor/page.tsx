@@ -5,7 +5,7 @@ import ChatMessage from "@/components/chat/message";
 import ModeSelector from "@/components/chat/mode-selector";
 import PageTransition from "@/components/ui/page-transition";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface Message {
   role: "user" | "assistant";

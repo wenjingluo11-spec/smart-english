@@ -16,7 +16,7 @@ cp .env.example .env  # 编辑配置
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
-访问 http://localhost:8000/docs 查看 API 文档。
+访问 http://127.0.0.1:8000/docs 查看 API 文档。
 
 ### 3. 前端
 ```bash

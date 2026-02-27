@@ -1,6 +1,6 @@
 import { getToken } from "./auth";
 
-const API_BASE = "http://localhost:8001";
+const API_BASE = "http://127.0.0.1:8000";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getToken();

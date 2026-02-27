@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8081"]
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3002", "http://localhost:8081"]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
