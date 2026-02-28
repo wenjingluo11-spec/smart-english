@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useExamStore } from "@/stores/exam";
 import Link from "next/link";
+import CognitiveEntryButton from "@/components/cognitive/CognitiveEntryButton";
 
 const PART_LABELS: Record<number, string> = { 1: "第一部分", 2: "第二部分", 3: "第三部分", 4: "第四部分" };
 
@@ -449,7 +450,6 @@ export default function MockPage() {
             </button>
           )}
         </div>
-        {/* Answer card overlay */}
         {showAnswerCard && (
           <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
             <div className="w-full max-w-lg rounded-t-2xl p-4 max-h-[70vh] overflow-y-auto"
@@ -495,6 +495,7 @@ export default function MockPage() {
             </div>
           </div>
         )}
+        <CognitiveEntryButton questionId={currentPage.questions[0]?.id ?? 0} questionText={currentPage.questions[0]?.content ?? ""} source="exam" />
       </div>
     );
   }

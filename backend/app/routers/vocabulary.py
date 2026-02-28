@@ -87,15 +87,24 @@ async def review_word(
 async def word_detail(word: str):
     """获取单词详细信息（LLM 生成）。"""
     import json
-    prompt_text = WORD_DETAIL_PROMPT.format(word=word)
-    raw = await chat_once(
-        [{"role": "user", "content": prompt_text}],
-        system_prompt="你是一位英语词汇专家，请严格按照要求的 JSON 格式返回。",
-    )
+    import logging
+    logger = logging.getLogger(__name__)
     try:
-        return json.loads(raw)
-    except Exception:
+        prompt_text = WORD_DETAIL_PROMPT.format(word=word)
+        raw = await chat_once(
+            [{"role": "user", "content": prompt_text}],
+            system_prompt="你是一位英语词汇专家，请严格按照要求的 JSON 格式返回。",
+        )
+        # 尝试清理 markdown 代码块标记
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
         return {"word": word, "raw": raw}
+    except Exception as e:
+        logger.exception("word_detail failed for word=%s: %s", word, e)
+        return {"word": word, "error": "获取单词详情失败，请稍后重试"}
 
 
 @router.get("/stats")

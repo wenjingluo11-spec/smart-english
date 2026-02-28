@@ -9,6 +9,7 @@ import ExpertDemo from "@/components/cognitive/ExpertDemo";
 import CognitiveFeedback from "@/components/cognitive/CognitiveFeedback";
 import { useEnhancementConfig } from "@/hooks/use-enhancement-config";
 import { tracker } from "@/lib/behavior-tracker";
+import CognitiveEntryButton from "@/components/cognitive/CognitiveEntryButton";
 
 const FREQ_LABELS: Record<string, string> = { high: "高频", medium: "中频", low: "低频" };
 const FREQ_COLORS: Record<string, string> = { high: "#ef4444", medium: "#f59e0b", low: "#6b7280" };
@@ -227,6 +228,7 @@ export default function WeaknessPage() {
               </button>
             </div>
           )}
+        <CognitiveEntryButton questionId={bt.knowledge_point_id} questionText={currentExercise?.question ?? ""} source="exam" />
         </div>
       );
     }

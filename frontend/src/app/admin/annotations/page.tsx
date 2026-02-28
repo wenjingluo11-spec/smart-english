@@ -32,8 +32,14 @@ interface KnowledgeEntry {
 /**
  * V4.3 标注管理 + V4.4 知识库管理后台页面。
  */
+interface GazeStep {
+  target_text: string;
+  action: string;
+  thought: string;
+}
+
 export default function AnnotationsPage() {
-  const [tab, setTab] = useState<"annotations" | "knowledge" | "distill">("annotations");
+  const [tab, setTab] = useState<"annotations" | "knowledge" | "distill" | "entry">("annotations");
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [knowledge, setKnowledge] = useState<KnowledgeEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -45,6 +51,13 @@ export default function AnnotationsPage() {
   // Distill form
   const [distillForm, setDistillForm] = useState({ question_type: "单项选择", topic: "", difficulty: "3" });
   const [distillResult, setDistillResult] = useState<Record<string, unknown> | null>(null);
+
+  // Entry tab state
+  const [entryQid, setEntryQid] = useState("");
+  const [entryQuestion, setEntryQuestion] = useState<{ id: number; content: string } | null>(null);
+  const [gazeSteps, setGazeSteps] = useState<GazeStep[]>([]);
+  const [entryNarration, setEntryNarration] = useState("");
+  const [selectedWord, setSelectedWord] = useState("");
 
   const fetchAnnotations = useCallback(async () => {
     setLoading(true);
@@ -94,6 +107,42 @@ export default function AnnotationsPage() {
     setLoading(false);
   };
 
+  const fetchEntryQuestion = async () => {
+    const qid = entryQid.trim();
+    if (!qid) return;
+    setLoading(true);
+    try {
+      const data = await api.get<{ question_id: number; question_content: string }>(`/cognitive/demo/practice/${qid}`);
+      setEntryQuestion({ id: Number(qid), content: data.question_content });
+      setGazeSteps([]);
+      setEntryNarration("");
+      setSelectedWord("");
+    } catch { setMsg("题目不存在"); setEntryQuestion(null); }
+    setLoading(false);
+  };
+
+  const handleWordClick = (word: string) => {
+    setSelectedWord(word);
+    setGazeSteps((prev) => [...prev, { target_text: word, action: "focus", thought: "" }]);
+  };
+
+  const handleEntrySubmit = async () => {
+    if (!entryQuestion || gazeSteps.length === 0) return;
+    setLoading(true);
+    try {
+      await api.post("/cognitive/annotations", {
+        question_id: entryQuestion.id,
+        gaze_path: gazeSteps.map((s, i) => ({ step: i + 1, ...s })),
+        narration: entryNarration,
+      });
+      setMsg("标注提交成功");
+      setGazeSteps([]);
+      setEntryNarration("");
+      setSelectedWord("");
+    } catch { setMsg("提交失败"); }
+    setLoading(false);
+  };
+
   return (
     <div className="max-w-5xl mx-auto p-4">
       <h1 className="text-xl font-bold mb-4" style={{ color: "var(--color-text)" }}>
@@ -106,6 +155,7 @@ export default function AnnotationsPage() {
           { key: "annotations" as const, label: "人工标注管理" },
           { key: "knowledge" as const, label: "知识库" },
           { key: "distill" as const, label: "蒸馏系统" },
+          { key: "entry" as const, label: "标注录入" },
         ]).map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
@@ -299,6 +349,87 @@ export default function AnnotationsPage() {
                 {JSON.stringify(distillResult, null, 2)}
               </pre>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Entry Tab */}
+      {tab === "entry" && (
+        <div className="space-y-4">
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="text-xs block mb-1" style={{ color: "var(--color-text-secondary)" }}>题目 ID</label>
+              <input type="text" value={entryQid} onChange={(e) => setEntryQid(e.target.value)}
+                placeholder="输入题目ID加载题目"
+                className="w-full px-3 py-2 rounded-lg text-sm border"
+                style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }} />
+            </div>
+            <button onClick={fetchEntryQuestion} disabled={!entryQid.trim() || loading}
+              className="px-4 py-2 rounded-lg text-sm text-white disabled:opacity-50"
+              style={{ background: "var(--color-primary)" }}>
+              加载题目
+            </button>
+          </div>
+
+          {entryQuestion && (
+            <>
+              <div className="rounded-xl border p-4" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+                <div className="text-xs mb-2" style={{ color: "var(--color-text-secondary)" }}>点击词语添加审题轨迹步骤：</div>
+                <div className="flex flex-wrap gap-1">
+                  {entryQuestion.content.split(/(\s+)/).filter(Boolean).map((word, i) => (
+                    <span key={i} onClick={() => word.trim() && handleWordClick(word.trim())}
+                      className="px-1 py-0.5 rounded cursor-pointer text-sm transition-all hover:opacity-70"
+                      style={{
+                        background: selectedWord === word.trim() ? "rgba(59,130,246,0.15)" : "transparent",
+                        color: "var(--color-text)",
+                      }}>
+                      {word}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {gazeSteps.length > 0 && (
+                <div className="rounded-xl border p-4 space-y-2" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+                  <div className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>审题轨迹 ({gazeSteps.length} 步)</div>
+                  {gazeSteps.map((step, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-sm">
+                      <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs text-white"
+                        style={{ background: "var(--color-primary)" }}>{idx + 1}</span>
+                      <span className="font-medium" style={{ color: "#2563eb" }}>{step.target_text}</span>
+                      <select value={step.action}
+                        onChange={(e) => setGazeSteps((prev) => prev.map((s, i) => i === idx ? { ...s, action: e.target.value } : s))}
+                        className="px-2 py-1 rounded text-xs border"
+                        style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+                        {["focus", "scan", "re-read", "compare", "skip"].map((a) => (
+                          <option key={a} value={a}>{a}</option>
+                        ))}
+                      </select>
+                      <input type="text" value={step.thought} placeholder="思考..."
+                        onChange={(e) => setGazeSteps((prev) => prev.map((s, i) => i === idx ? { ...s, thought: e.target.value } : s))}
+                        className="flex-1 px-2 py-1 rounded text-xs border"
+                        style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }} />
+                      <button onClick={() => setGazeSteps((prev) => prev.filter((_, i) => i !== idx))}
+                        className="text-xs px-1.5 py-0.5 rounded" style={{ color: "#dc2626" }}>x</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs block mb-1" style={{ color: "var(--color-text-secondary)" }}>旁白文本</label>
+                <textarea value={entryNarration} onChange={(e) => setEntryNarration(e.target.value)}
+                  placeholder="输入审题旁白..." rows={3}
+                  className="w-full px-3 py-2 rounded-lg text-sm border resize-none"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }} />
+              </div>
+
+              <button onClick={handleEntrySubmit} disabled={gazeSteps.length === 0 || loading}
+                className="px-5 py-2 rounded-lg text-sm text-white disabled:opacity-50"
+                style={{ background: "var(--color-primary)" }}>
+                {loading ? "提交中..." : "提交标注"}
+              </button>
+            </>
           )}
         </div>
       )}

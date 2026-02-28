@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
 import AudioPlayer from "@/components/cognitive/AudioPlayer";
+import { STEM_ROLE_STYLES, STEM_PRIORITY_STYLES } from "@/lib/cognitive-styles";
 
 interface StemSegment {
   text: string;
@@ -28,18 +29,8 @@ interface StemNavigatorProps {
   className?: string;
 }
 
-const ROLE_STYLES: Record<string, { bg: string; border: string; label: string; icon: string }> = {
-  question: { bg: "rgba(239,68,68,0.12)", border: "2px solid rgba(239,68,68,0.5)", label: "问题", icon: "?" },
-  condition: { bg: "rgba(59,130,246,0.1)", border: "2px solid rgba(59,130,246,0.4)", label: "条件", icon: "!" },
-  background: { bg: "rgba(156,163,175,0.08)", border: "1px solid rgba(156,163,175,0.3)", label: "背景", icon: "~" },
-  noise: { bg: "rgba(156,163,175,0.05)", border: "1px dashed rgba(156,163,175,0.2)", label: "干扰", icon: "x" },
-};
-
-const PRIORITY_STYLES: Record<string, { opacity: number; badge: string; badgeBg: string }> = {
-  must_read: { opacity: 1, badge: "必读", badgeBg: "#dc2626" },
-  skim: { opacity: 0.75, badge: "略读", badgeBg: "#d97706" },
-  skip: { opacity: 0.45, badge: "可跳", badgeBg: "#9ca3af" },
-};
+const ROLE_STYLES = STEM_ROLE_STYLES;
+const PRIORITY_STYLES = STEM_PRIORITY_STYLES;
 
 /** 长题干审题辅助组件 — 自动折叠非关键部分，引导学生按优先级阅读 */
 export default function StemNavigator({
@@ -50,8 +41,9 @@ export default function StemNavigator({
 }: StemNavigatorProps) {
   const [analysis, setAnalysis] = useState<LongStemAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expandedSegments, setExpandedSegments] = useState<Set<number>>(new Set());
   const [showGuide, setShowGuide] = useState(true);
+  const eyeRef = useRef<HTMLDivElement>(null);
 
   const analyze = useCallback(async () => {
     if (questionText.length < 100) return;
@@ -105,6 +97,13 @@ export default function StemNavigator({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {showGuide && analysis.eye_sentence && (
+            <button onClick={() => eyeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+              className="text-xs px-2 py-1 rounded-lg transition-colors"
+              style={{ background: "rgba(239,68,68,0.1)", color: "#dc2626" }}>
+              定位题眼
+            </button>
+          )}
           <button onClick={() => setShowGuide(!showGuide)}
             className="text-xs px-2 py-1 rounded-lg transition-colors"
             style={{ background: showGuide ? "var(--color-primary)" : "var(--color-surface-hover)", color: showGuide ? "white" : "var(--color-text-secondary)" }}>
@@ -131,17 +130,19 @@ export default function StemNavigator({
               const roleStyle = ROLE_STYLES[seg.role] || ROLE_STYLES.background;
               const prioStyle = PRIORITY_STYLES[seg.priority] || PRIORITY_STYLES.skim;
               const isSkippable = seg.priority === "skip";
+              const segExpanded = expandedSegments.has(i);
               const isEye = analysis.eye_sentence && seg.text.includes(analysis.eye_sentence);
 
               return (
                 <div key={i}
-                  className={`p-3 rounded-xl transition-all ${isSkippable && !expanded ? "cursor-pointer" : ""}`}
+                  ref={isEye ? eyeRef : undefined}
+                  className={`p-3 rounded-xl transition-all ${isSkippable && !segExpanded ? "cursor-pointer" : ""}`}
                   style={{
                     background: isEye ? "rgba(239,68,68,0.1)" : roleStyle.bg,
                     border: isEye ? "2px solid rgba(239,68,68,0.5)" : roleStyle.border,
-                    opacity: isSkippable && !expanded ? 0.5 : prioStyle.opacity,
+                    opacity: isSkippable && !segExpanded ? 0.5 : prioStyle.opacity,
                   }}
-                  onClick={() => isSkippable && !expanded && setExpanded(true)}
+                  onClick={() => isSkippable && !segExpanded && setExpandedSegments(prev => new Set(prev).add(i))}
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs px-1.5 py-0.5 rounded text-white" style={{ background: prioStyle.badgeBg }}>
@@ -150,14 +151,19 @@ export default function StemNavigator({
                     <span className="text-xs" style={{ color: "var(--color-text-secondary)" }}>{roleStyle.label}</span>
                     {isEye && <span className="text-xs px-1.5 py-0.5 rounded text-white" style={{ background: "#dc2626" }}>&#x1F441; 题眼</span>}
                   </div>
-                  {isSkippable && !expanded ? (
+                  {isSkippable && !segExpanded ? (
                     <p className="text-xs italic" style={{ color: "var(--color-text-secondary)" }}>
                       [背景信息，点击展开] {seg.text.slice(0, 30)}...
                     </p>
                   ) : (
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--color-text)" }}>
-                      {seg.text}
-                    </p>
+                    <div>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--color-text)" }}>
+                        {seg.text}
+                      </p>
+                      <div className="mt-1.5">
+                        <AudioPlayer text={seg.text} compact label="听这段" />
+                      </div>
+                    </div>
                   )}
                 </div>
               );
@@ -199,6 +205,11 @@ export default function StemNavigator({
           </div>
         )}
       </div>
+      <style jsx>{`
+        @media (prefers-reduced-motion: reduce) {
+          div { transition: none !important; }
+        }
+      `}</style>
     </div>
   );
 }

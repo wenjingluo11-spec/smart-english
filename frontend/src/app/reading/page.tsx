@@ -9,6 +9,7 @@ import SentenceParser from "@/components/reading/sentence-parser";
 import EnhancedReadingQuiz from "@/components/reading/enhanced-reading-quiz";
 import ReadingProgressBar from "@/components/reading/progress-bar";
 import AudioPlayer from "@/components/cognitive/AudioPlayer";
+import CognitiveEntryButton from "@/components/cognitive/CognitiveEntryButton";
 import PageTransition from "@/components/ui/page-transition";
 import Skeleton from "@/components/ui/skeleton";
 import { EmptyTelescope } from "@/components/ui/empty-illustrations";
@@ -253,6 +254,7 @@ export default function ReadingPage() {
             </div>
           </div>
         </div>
+        <CognitiveEntryButton questionId={selected.id} questionText={selected.content || ""} source="practice" />
       </PageTransition>
     );
   }

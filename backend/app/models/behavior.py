@@ -69,6 +69,7 @@ class CognitiveKnowledgeBase(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     # 题型维度
     question_type: Mapped[str] = mapped_column(String(50), index=True)  # 单选/完形/阅读/语法填空
+    subject: Mapped[str] = mapped_column(String(30), default="english", index=True)
     topic: Mapped[str] = mapped_column(String(100), default="")  # 具体知识点
     difficulty: Mapped[int] = mapped_column(Integer, default=3)
     # 策略数据
@@ -85,4 +86,20 @@ class CognitiveKnowledgeBase(Base):
     avg_success_rate: Mapped[float] = mapped_column(Float, default=0.0)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CognitiveFeedbackRecord(Base):
+    """用户对认知增强内容的反馈记录。"""
+    __tablename__ = "cognitive_feedback_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    question_id: Mapped[int] = mapped_column(Integer, index=True)
+    gaze_path_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rating: Mapped[int] = mapped_column(Integer)  # 1=helpful, 2=neutral, 3=unhelpful
+    helpful_steps: Mapped[str | None] = mapped_column(Text, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )

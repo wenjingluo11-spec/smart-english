@@ -1,6 +1,7 @@
 import AudioPlayer from "@/components/cognitive/AudioPlayer";
 import SyncReader from "@/components/cognitive/SyncReader";
 import ExpertDemo from "@/components/cognitive/ExpertDemo";
+import TextHighlighter, { type Highlight } from "@/components/cognitive/TextHighlighter";
 
 interface AnswerFeedbackProps {
   feedback: Record<string, unknown>;
@@ -82,17 +83,28 @@ export default function AnswerFeedback({ feedback, questionId, questionContent, 
         </div>
       )}
 
-      {/* 关键线索 */}
-      {keyClues && keyClues.length > 0 && (
+      {/* 关键线索：在原文中高亮标记 */}
+      {keyClues && keyClues.length > 0 && questionContent && (
         <div className="p-4 rounded-xl" style={{ background: "var(--color-surface-hover, #f9fafb)" }}>
-          <div className="text-xs font-semibold mb-2" style={{ color: "#6b7280" }}>\u5173\u952e\u7ebf\u7d22</div>
+          <div className="text-xs font-semibold mb-2" style={{ color: "#6b7280" }}>关键线索（原文标记）</div>
+          <TextHighlighter
+            text={questionContent}
+            highlights={buildHighlightsFromClues(questionContent, keyClues, analysis)}
+          />
+        </div>
+      )}
+
+      {/* 关键线索：文字列表（无原文时或作为补充） */}
+      {keyClues && keyClues.length > 0 && !questionContent && (
+        <div className="p-4 rounded-xl" style={{ background: "var(--color-surface-hover, #f9fafb)" }}>
+          <div className="text-xs font-semibold mb-2" style={{ color: "#6b7280" }}>关键线索</div>
           <div className="space-y-1.5">
             {keyClues.map((clue, i) => (
               <div key={i} className="flex items-start gap-2 text-sm">
                 <span className="text-blue-500 mt-0.5 shrink-0">&#x25B8;</span>
                 <span>
                   <span className="font-medium" style={{ color: "#2563eb" }}>{clue.text}</span>
-                  <span className="mx-1" style={{ color: "#9ca3af" }}>\u2014</span>
+                  <span className="mx-1" style={{ color: "#9ca3af" }}>—</span>
                   <span style={{ color: "#6b7280" }}>{clue.role}</span>
                 </span>
               </div>
@@ -168,4 +180,56 @@ export default function AnswerFeedback({ feedback, questionId, questionContent, 
       )}
     </div>
   );
+}
+
+/** 从 key_clues 和 analysis 构建 TextHighlighter 所需的 Highlight 数组 */
+function buildHighlightsFromClues(
+  questionContent: string,
+  keyClues: { text: string; role: string }[],
+  analysis?: {
+    key_phrases: { text: string; role: string; importance: string; hint: string }[];
+    reading_order: { step: number; target: string; action: string; reason: string }[];
+    strategy: string;
+    distractors: { option: string; trap: string }[];
+  },
+): Highlight[] {
+  const highlights: Highlight[] = [];
+
+  for (const clue of keyClues) {
+    const idx = questionContent.indexOf(clue.text);
+    if (idx < 0) continue;
+    const type = clue.role === "signal_word" || clue.role === "信号词" ? "signal_word"
+      : clue.role === "context_clue" || clue.role === "上下文线索" ? "clue"
+      : clue.role === "key_info" || clue.role === "关键信息" ? "key_phrase"
+      : "key_phrase";
+    highlights.push({
+      text: clue.text,
+      start: idx,
+      end: idx + clue.text.length,
+      type: type as Highlight["type"],
+      label: clue.role,
+    });
+  }
+
+  // 从 analysis.key_phrases 补充题眼
+  if (analysis?.key_phrases) {
+    for (const kp of analysis.key_phrases) {
+      if (highlights.some((h) => h.text === kp.text)) continue;
+      const idx = questionContent.indexOf(kp.text);
+      if (idx < 0) continue;
+      const type = kp.role === "signal_word" ? "signal_word"
+        : kp.role === "context_clue" ? "clue"
+        : kp.role === "key_info" ? "key_phrase"
+        : "key_phrase";
+      highlights.push({
+        text: kp.text,
+        start: idx,
+        end: idx + kp.text.length,
+        type: type as Highlight["type"],
+        label: kp.hint || kp.role,
+      });
+    }
+  }
+
+  return highlights;
 }

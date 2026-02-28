@@ -10,9 +10,11 @@ V4.4 功能：
 import json
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.behavior import CognitiveKnowledgeBase, BehaviorEvent
+from app.models.behavior import CognitiveKnowledgeBase, BehaviorEvent, CognitiveFeedbackRecord
+from app.models.question import Question
 from app.models.question_analysis import QuestionAnalysis, HumanAnnotation
 from app.models.learning import LearningRecord
+from collections import Counter
 from app.services.llm import chat_once_json
 
 
@@ -22,6 +24,7 @@ _DISTILL_PROMPT = """你是一个认知增强策略分析专家。根据以下�
 - 人工标注的审题轨迹样本
 - AI 分析的题眼和策略
 - 用户行为统计（哪些功能使用后正确率更高）
+- 用户反馈数据（学生对认知增强内容的评价）
 - 常见错误模式
 
 请总结出：
@@ -55,6 +58,7 @@ async def distill_knowledge(
     question_type: str,
     topic: str = "",
     difficulty: int = 3,
+    subject: str = "english",
 ) -> dict:
     """对指定题型进行知识蒸馏，更新认知增强知识库。"""
 
@@ -93,6 +97,9 @@ async def distill_knowledge(
     # 3. 收集行为统计
     behavior_stats = await _get_behavior_stats_for_type(db, question_type)
 
+    # 3.5 收集用户反馈数据
+    feedback_stats = await _get_feedback_stats(db, question_type)
+
     # 4. 调用 LLM 蒸馏
     user_prompt = (
         f"【题型】{question_type}\n"
@@ -101,7 +108,8 @@ async def distill_knowledge(
         f"【人工标注样本数】{len(annotation_summaries)}\n"
         f"【人工标注摘要】{json.dumps(annotation_summaries[:5], ensure_ascii=False)}\n\n"
         f"【AI策略样本】{json.dumps(strategy_samples[:10], ensure_ascii=False)}\n\n"
-        f"【用户行为统计】{json.dumps(behavior_stats, ensure_ascii=False)}"
+        f"【用户行为统计】{json.dumps(behavior_stats, ensure_ascii=False)}\n\n"
+        f"【用户反馈统计】{json.dumps(feedback_stats, ensure_ascii=False)}"
     )
 
     try:
@@ -120,6 +128,7 @@ async def distill_knowledge(
             CognitiveKnowledgeBase.question_type == question_type,
             CognitiveKnowledgeBase.topic == topic,
             CognitiveKnowledgeBase.difficulty == difficulty,
+            CognitiveKnowledgeBase.subject == subject,
         )
     )
     kb = result.scalar_one_or_none()
@@ -129,6 +138,7 @@ async def distill_knowledge(
             question_type=question_type,
             topic=topic,
             difficulty=difficulty,
+            subject=subject,
         )
         db.add(kb)
 
@@ -137,6 +147,7 @@ async def distill_knowledge(
     kb.effective_clues_json = json.dumps(distilled.get("effective_clues", []), ensure_ascii=False)
     kb.human_annotation_count = len(annotations)
     kb.ai_analysis_count = len(analyses)
+    kb.user_behavior_count = behavior_stats.get("total_events", 0) + feedback_stats.get("total_feedback_count", 0)
 
     await db.commit()
 
@@ -156,11 +167,13 @@ async def distill_knowledge(
 async def get_knowledge_base(
     db: AsyncSession,
     question_type: str = "",
+    subject: str = "english",
 ) -> list[dict]:
     """查询认知增强知识库。"""
     stmt = select(CognitiveKnowledgeBase)
     if question_type:
         stmt = stmt.where(CognitiveKnowledgeBase.question_type == question_type)
+    stmt = stmt.where(CognitiveKnowledgeBase.subject == subject)
     stmt = stmt.order_by(CognitiveKnowledgeBase.updated_at.desc())
 
     result = await db.execute(stmt)
@@ -208,3 +221,56 @@ async def _get_behavior_stats_for_type(
         "highlight_usage_rate": round((row.highlight_count or 0) / total, 3),
         "hint_usage_rate": round((row.hint_count or 0) / total, 3),
     }
+
+
+async def _get_feedback_stats(db: AsyncSession, question_type: str) -> dict:
+    """获取特定题型的用户反馈统计。"""
+    base = (
+        select(CognitiveFeedbackRecord)
+        .join(Question, Question.id == CognitiveFeedbackRecord.question_id)
+        .where(Question.question_type == question_type)
+    )
+    result = await db.execute(base)
+    records = result.scalars().all()
+
+    if not records:
+        return {"total_feedback_count": 0, "avg_rating": 0, "helpful_count": 0,
+                "neutral_count": 0, "unhelpful_count": 0, "top_helpful_steps": []}
+
+    helpful = sum(1 for r in records if r.rating == 1)
+    neutral = sum(1 for r in records if r.rating == 2)
+    unhelpful = sum(1 for r in records if r.rating == 3)
+    avg_rating = round(sum(r.rating for r in records) / len(records), 2)
+
+    step_counter: Counter = Counter()
+    for r in records:
+        if r.helpful_steps:
+            try:
+                steps = json.loads(r.helpful_steps)
+                if isinstance(steps, list):
+                    step_counter.update(steps)
+            except Exception:
+                pass
+
+    return {
+        "total_feedback_count": len(records),
+        "avg_rating": avg_rating,
+        "helpful_count": helpful,
+        "neutral_count": neutral,
+        "unhelpful_count": unhelpful,
+        "top_helpful_steps": step_counter.most_common(5),
+    }
+
+
+async def auto_distill(db: AsyncSession) -> list[dict]:
+    """自动对所有题型执行知识蒸馏，供定时任务调用。"""
+    result = await db.execute(
+        select(QuestionAnalysis.question_type).distinct()
+    )
+    question_types = [row[0] for row in result.all() if row[0]]
+
+    results = []
+    for qt in question_types:
+        r = await distill_knowledge(db, qt)
+        results.append(r)
+    return results

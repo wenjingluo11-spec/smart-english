@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
-    cors_origins: list[str] = ["http://localhost:8090", "http://127.0.0.1:8090"]
+    cors_origins: list[str] = ["http://localhost:8090", "http://127.0.0.1:8000"]
 
     # TTS 配置
     tts_default_voice: str = "en-US-JennyNeural"

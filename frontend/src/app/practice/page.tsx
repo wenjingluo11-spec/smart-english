@@ -16,6 +16,7 @@ import SyncReader from "@/components/cognitive/SyncReader";
 import ExpertDemo from "@/components/cognitive/ExpertDemo";
 import MultimodalEnhancer from "@/components/cognitive/MultimodalEnhancer";
 import StemNavigator from "@/components/cognitive/StemNavigator";
+import CognitiveEntryButton from "@/components/cognitive/CognitiveEntryButton";
 
 interface Question {
   id: number;
@@ -746,7 +747,7 @@ export default function PracticePage() {
                           </span>
                           <div>
                             <span className="font-medium" style={{ color: "var(--color-text)" }}>{step.target}</span>
-                            <span className="mx-1" style={{ color: "var(--color-text-secondary)" }}>→</span>
+                            <span className="mx-1" style={{ color: "var(--color-text-secondary)" }}>{"\u2192"}</span>
                             <span style={{ color: "var(--color-text-secondary)" }}>{step.action}</span>
                           </div>
                         </div>
@@ -775,7 +776,7 @@ export default function PracticePage() {
                       className="text-sm flex items-center gap-1 cursor-pointer transition-colors"
                       style={{ color: "var(--color-primary)" }}
                     >
-                      <span style={{ display: "inline-block", transition: "transform 0.2s", transform: showExplanation ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+                      <span style={{ display: "inline-block", transition: "transform 0.2s", transform: showExplanation ? "rotate(90deg)" : "rotate(0deg)" }}>{"\u25b6"}</span>
                       {showExplanation ? "收起传统解析" : "查看传统解析"}
                     </button>
                     {showExplanation && (
@@ -796,7 +797,7 @@ export default function PracticePage() {
                     className="text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer inline-flex items-center gap-1 shadow-theme-sm"
                     style={{ background: "linear-gradient(135deg, var(--color-primary), var(--color-accent))" }}
                   >
-                    下一题 →
+                    下一题 {"\u2192"}
                   </button>
                 )}
               </div>
@@ -804,6 +805,7 @@ export default function PracticePage() {
           </div>
           </div>
         )}
+        <CognitiveEntryButton questionId={q?.id ?? 0} questionText={q?.content ?? ""} source="practice" />
       </div>
     </PageTransition>
   );

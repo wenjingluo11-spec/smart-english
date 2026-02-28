@@ -6,8 +6,10 @@ import { useRouter } from "next/navigation";
 import { tracker } from "@/lib/behavior-tracker";
 import { useEnhancementConfig } from "@/hooks/use-enhancement-config";
 import AudioPlayer from "@/components/cognitive/AudioPlayer";
-import ExpertDemo from "@/components/cognitive/ExpertDemo";
-import CognitiveFeedback from "@/components/cognitive/CognitiveFeedback";
+import TextHighlighter, { type Highlight } from "@/components/cognitive/TextHighlighter";
+import ProgressiveHintPanel, { type ProgressiveHintData } from "@/components/cognitive/ProgressiveHintPanel";
+import PreAnswerGuide from "@/components/cognitive/PreAnswerGuide";
+import CognitiveEntryButton from "@/components/cognitive/CognitiveEntryButton";
 
 const SECTION_OPTIONS = [
   { value: "reading", label: "阅读理解" },
@@ -26,21 +28,9 @@ export default function FlowPage() {
   const [phase, setPhase] = useState<"select" | "playing" | "report">("select");
   const [section, setSection] = useState("reading");
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{
-    correct: boolean;
-    explanation: string;
-    milestone: number | null;
-    how_to_spot?: string;
-    key_clues?: { text: string; role: string }[];
-    common_trap?: string;
-    method?: string;
-    analysis?: {
-      key_phrases: { text: string; role: string; importance: string; hint: string }[];
-      reading_order: { step: number; target: string; action: string; reason: string }[];
-      strategy: string;
-      distractors: { option: string; trap: string }[];
-    };
-  } | null>(null);
+  const [feedback, setFeedback] = useState<ProgressiveHintData | null>(null);
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [showGuide, setShowGuide] = useState(false);
   const [totalAnswered, setTotalAnswered] = useState(0);
   const [flashColor, setFlashColor] = useState<string | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -60,6 +50,8 @@ export default function FlowPage() {
     startTimeRef.current = Date.now();
   };
 
+  const [milestone, setMilestone] = useState<number | null>(null);
+
   const handleAnswer = useCallback(async (answer: string) => {
     if (!flowState?.question || selectedAnswer) return;
     setSelectedAnswer(answer);
@@ -70,24 +62,67 @@ export default function FlowPage() {
     const isCorrect = res.is_correct as boolean;
     setFlashColor(isCorrect ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)");
     tracker.track("answer_submit", { question_id: flowState.question.id, module: "exam" }, { event_data: { answer, is_correct: isCorrect, response_ms: responseMs } });
-    setFeedback({
-      correct: isCorrect,
-      explanation: (res.explanation as string) || "",
-      milestone: (res.milestone as number) || null,
-      how_to_spot: (res.how_to_spot as string) || "",
-      key_clues: (res.key_clues as { text: string; role: string }[]) || [],
-      common_trap: (res.common_trap as string) || "",
-      method: (res.method as string) || "",
-      analysis: res.analysis as typeof feedback extends null ? never : NonNullable<typeof feedback>["analysis"],
-    });
+
+    const hintData: ProgressiveHintData = {
+      is_correct: isCorrect,
+      correct_answer: res.correct_answer as string | undefined,
+      hint_levels: res.hint_levels as ProgressiveHintData["hint_levels"],
+      guided_discovery: res.guided_discovery as ProgressiveHintData["guided_discovery"],
+      how_to_spot: (res.how_to_spot as string) || undefined,
+      key_clues: (res.key_clues as { text: string; role: string }[]) || undefined,
+      common_trap: (res.common_trap as string) || undefined,
+      method: (res.method as string) || undefined,
+      explanation: (res.explanation as string) || undefined,
+    };
+    setFeedback(hintData);
+    setMilestone((res.milestone as number) || null);
     setTotalAnswered((n) => n + 1);
 
-    // 自动切下一题：答对快切，答错需要手动点击（留时间看学霸演示）
+    // 提取高亮数据
+    const analysis = res.analysis as {
+      key_phrases?: { text: string; role: string; start?: number; end?: number }[];
+      question_eye?: string;
+    } | undefined;
+    if (analysis && flowState.question) {
+      const hl: Highlight[] = [];
+      const qText = flowState.question.content;
+      if (analysis.question_eye) {
+        const idx = qText.indexOf(analysis.question_eye);
+        hl.push({
+          text: analysis.question_eye,
+          start: idx >= 0 ? idx : 0,
+          end: idx >= 0 ? idx + analysis.question_eye.length : analysis.question_eye.length,
+          type: "question_eye",
+          label: "题眼",
+        });
+      }
+      if (analysis.key_phrases) {
+        for (const kp of analysis.key_phrases) {
+          const idx = qText.indexOf(kp.text);
+          const type = kp.role === "signal_word" ? "signal_word"
+            : kp.role === "context_clue" ? "clue"
+            : "key_phrase";
+          hl.push({
+            text: kp.text,
+            start: kp.start ?? (idx >= 0 ? idx : 0),
+            end: kp.end ?? (idx >= 0 ? idx + kp.text.length : kp.text.length),
+            type: type as Highlight["type"],
+            label: kp.role,
+          });
+        }
+      }
+      setHighlights(hl);
+    }
+
+    // 答对快切
     if (isCorrect) {
       setTimeout(() => {
         setSelectedAnswer(null);
         setFeedback(null);
+        setHighlights([]);
         setFlashColor(null);
+        setMilestone(null);
+        setShowGuide(false);
         startTimeRef.current = Date.now();
       }, 500);
     }
@@ -207,10 +242,10 @@ export default function FlowPage() {
       </div>
 
       {/* 里程碑特效 */}
-      {feedback?.milestone && (
+      {milestone && (
         <div className="fixed inset-0 flex items-center justify-center z-40 pointer-events-none">
           <div className="text-6xl font-black animate-bounce" style={{ color: "var(--color-primary)" }}>
-            🔥 {feedback.milestone} 连击！
+            🔥 {milestone} 连击！
           </div>
         </div>
       )}
@@ -228,10 +263,35 @@ export default function FlowPage() {
           <div className="flex items-center justify-center gap-2 mb-2">
             {enhConfig.auto_tts && <AudioPlayer text={question.content} compact label="听题" />}
           </div>
-          <p className="text-lg font-medium leading-relaxed" style={{ color: "var(--color-text)" }}>
-            {question.content}
-          </p>
+          <div className="text-lg font-medium leading-relaxed" style={{ color: "var(--color-text)" }}>
+            {feedback && !feedback.is_correct && highlights.length > 0 ? (
+              <TextHighlighter text={question.content} highlights={highlights} />
+            ) : (
+              question.content
+            )}
+          </div>
         </div>
+
+        {/* 答题前审题引导（心流模式下紧凑展示） */}
+        {!feedback && !showGuide && !selectedAnswer && (
+          <button onClick={() => setShowGuide(true)}
+            className="w-full mb-3 py-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1"
+            style={{ background: "rgba(59,130,246,0.06)", color: "#2563eb", border: "1px solid rgba(59,130,246,0.15)" }}>
+            🧠 审题引导
+          </button>
+        )}
+        {!feedback && showGuide && (
+          <div className="w-full mb-3">
+            <PreAnswerGuide
+              questionId={question.id}
+              questionText={question.content}
+              optionsText={question.options.join("\n")}
+              source="exam"
+              onClose={() => setShowGuide(false)}
+              compact
+            />
+          </div>
+        )}
 
         {/* 选项 */}
         <div className="w-full space-y-3">
@@ -239,8 +299,8 @@ export default function FlowPage() {
             const letter = String.fromCharCode(65 + i);
             const isSelected = selectedAnswer === letter;
             const showResult = selectedAnswer !== null;
-            const isCorrect = feedback?.correct && isSelected;
-            const isWrong = !feedback?.correct && isSelected;
+            const isCorrect = feedback?.is_correct && isSelected;
+            const isWrong = !feedback?.is_correct && isSelected;
 
             let bg = "var(--color-card)";
             let borderColor = "var(--color-border)";
@@ -257,49 +317,33 @@ export default function FlowPage() {
           })}
         </div>
 
-        {/* 认知增强反馈（答错时显示） */}
-        {feedback && !feedback.correct && (
-          <div className="w-full mt-4 space-y-2">
-            {/* 学霸审题演示 */}
-            {enhConfig.show_expert_demo && (
-              <ExpertDemo
-                questionText={question.content}
-                questionId={question.id}
-                source="exam"
-              />
-            )}
-            {/* 统一认知反馈 */}
-            <CognitiveFeedback
-              data={{
-                how_to_spot: feedback.how_to_spot,
-                key_clues: feedback.key_clues,
-                common_trap: feedback.common_trap,
-                method: feedback.method,
-              }}
+        {/* 认知增强反馈（答错时：渐进式提示） */}
+        {feedback && !feedback.is_correct && (
+          <div className="w-full mt-4">
+            <ProgressiveHintPanel
+              data={feedback}
               compact
-            />
-            {/* 兜底：如果没有认知增强字段，显示传统解析 */}
-            {!feedback.how_to_spot && !feedback.common_trap && !feedback.method && feedback.explanation && (
-              <div className="p-3 rounded-xl text-sm" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}>
-                {feedback.explanation}
-              </div>
-            )}
-            {/* 手动下一题按钮 */}
-            <button
-              onClick={() => {
+              onRetry={() => {
                 setSelectedAnswer(null);
                 setFeedback(null);
+                setHighlights([]);
                 setFlashColor(null);
+                setShowGuide(false);
+              }}
+              onComplete={() => {
+                setSelectedAnswer(null);
+                setFeedback(null);
+                setHighlights([]);
+                setFlashColor(null);
+                setMilestone(null);
+                setShowGuide(false);
                 startTimeRef.current = Date.now();
               }}
-              className="w-full py-3 rounded-xl font-medium text-white mt-2"
-              style={{ background: "var(--color-primary)" }}
-            >
-              我看懂了，下一题
-            </button>
+            />
           </div>
         )}
       </div>
+      <CognitiveEntryButton questionId={question?.id ?? 0} questionText={question?.content ?? ""} source="exam" />
     </div>
   );
 }

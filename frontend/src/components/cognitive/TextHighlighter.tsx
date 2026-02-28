@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { HIGHLIGHT_STYLES } from "@/lib/cognitive-styles";
 
 export interface Highlight {
   text: string;
@@ -14,42 +15,16 @@ interface TextHighlighterProps {
   text: string;
   highlights: Highlight[];
   animated?: boolean;
+  /** When true, highlights appear one-by-one with staggered delay */
+  sequentialReveal?: boolean;
+  /** When set, only this highlight index is fully visible; others dim to 0.4 */
+  focusIndex?: number;
+  /** Click handler on individual highlights */
+  onHighlightClick?: (index: number, highlight: Highlight) => void;
   className?: string;
 }
 
-/** 高亮类型 → 样式映射 */
-const HIGHLIGHT_STYLES: Record<Highlight["type"], { bg: string; border: string; text: string; decoration: string }> = {
-  question_eye: {
-    bg: "rgba(239, 68, 68, 0.2)",
-    border: "2px solid rgba(239, 68, 68, 0.8)",
-    text: "#b91c1c",
-    decoration: "underline wavy #b91c1c",
-  },
-  key_phrase: {
-    bg: "rgba(239, 68, 68, 0.12)",
-    border: "2px solid rgba(239, 68, 68, 0.5)",
-    text: "#dc2626",
-    decoration: "underline wavy #dc2626",
-  },
-  signal_word: {
-    bg: "rgba(245, 158, 11, 0.15)",
-    border: "2px solid rgba(245, 158, 11, 0.5)",
-    text: "#d97706",
-    decoration: "underline #d97706",
-  },
-  distractor: {
-    bg: "rgba(156, 163, 175, 0.12)",
-    border: "1px dashed rgba(156, 163, 175, 0.5)",
-    text: "#6b7280",
-    decoration: "line-through #9ca3af",
-  },
-  clue: {
-    bg: "rgba(59, 130, 246, 0.1)",
-    border: "2px solid rgba(59, 130, 246, 0.4)",
-    text: "#2563eb",
-    decoration: "underline #2563eb",
-  },
-};
+
 
 /** 高亮类型 → 中文标签 */
 const TYPE_LABELS: Record<Highlight["type"], string> = {
@@ -76,6 +51,9 @@ export default function TextHighlighter({
   text,
   highlights,
   animated = true,
+  sequentialReveal = false,
+  focusIndex,
+  onHighlightClick,
   className = "",
 }: TextHighlighterProps) {
   const segments = useMemo(() => buildSegments(text, highlights), [text, highlights]);
@@ -98,13 +76,18 @@ export default function TextHighlighter({
         const style = HIGHLIGHT_STYLES[seg.highlight.type];
         const tooltipText = seg.highlight.label || TYPE_LABELS[seg.highlight.type];
         const isEye = seg.highlight.type === "question_eye";
+        const isFocused = focusIndex === undefined || focusIndex === seg.index;
+        const revealDelay = sequentialReveal ? seg.index * 300 : (animated ? seg.index * 150 : 0);
 
         return (
           <span
             key={i}
-            className={`relative inline-block group cursor-help rounded-sm px-0.5 mx-px transition-all ${
-              animated ? "animate-highlight-in" : ""
-            } ${isEye ? "animate-eye-pulse" : ""}`}
+            onClick={onHighlightClick ? () => onHighlightClick(seg.index, seg.highlight!) : undefined}
+            className={`relative inline-block group rounded-sm px-0.5 mx-px transition-all ${
+              onHighlightClick ? "cursor-pointer" : "cursor-help"
+            } ${sequentialReveal ? "animate-sequential-reveal" : animated ? "animate-highlight-in" : ""
+            } ${isEye ? "animate-eye-pulse" : ""
+            } ${isFocused ? "" : "highlight-dimmed"}`}
             style={{
               background: style.bg,
               color: style.text,
@@ -115,16 +98,15 @@ export default function TextHighlighter({
               border: isEye ? style.border : undefined,
               borderRadius: isEye ? "4px" : undefined,
               padding: isEye ? "1px 6px" : undefined,
-              animationDelay: animated ? `${seg.index * 150}ms` : undefined,
+              transform: isFocused && focusIndex !== undefined ? "scale(1.05)" : undefined,
+              animationDelay: `${revealDelay}ms`,
               animationFillMode: "both",
             }}
           >
             {seg.text}
             {/* Tooltip */}
             <span
-              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded text-xs
-                         bg-gray-800 text-white whitespace-nowrap opacity-0 group-hover:opacity-100
-                         transition-opacity pointer-events-none z-10 shadow-lg"
+              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded text-xs bg-gray-800 text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg"
             >
               {tooltipText}
               <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
@@ -152,28 +134,25 @@ export default function TextHighlighter({
       {/* 动画 keyframes */}
       <style jsx>{`
         @keyframes highlight-in {
-          from {
-            opacity: 0;
-            background: transparent;
-            text-decoration-color: transparent;
-          }
-          to {
-            opacity: 1;
-          }
+          from { opacity: 0; background: transparent; text-decoration-color: transparent; }
+          to { opacity: 1; }
         }
-        .animate-highlight-in {
-          animation: highlight-in 0.4s ease-out;
+        .animate-highlight-in { animation: highlight-in 0.4s ease-out; }
+        @keyframes sequential-reveal {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
         }
+        .animate-sequential-reveal { animation: sequential-reveal 0.5s ease-out; }
         @keyframes eye-pulse {
-          0%, 100% {
-            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
-          }
-          50% {
-            box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
-          }
+          0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+          50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
         }
-        .animate-eye-pulse {
-          animation: eye-pulse 2s ease-in-out infinite;
+        .animate-eye-pulse { animation: eye-pulse 2s ease-in-out infinite; }
+        .highlight-dimmed { opacity: 0.4; }
+        @media (prefers-reduced-motion: reduce) {
+          .animate-highlight-in,
+          .animate-sequential-reveal { animation: none; opacity: 1; }
+          .animate-eye-pulse { animation: none; }
         }
       `}</style>
     </div>

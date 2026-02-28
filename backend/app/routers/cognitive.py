@@ -231,6 +231,64 @@ async def create_annotation(
     }
 
 
+@router.get("/annotations/stats")
+async def annotation_stats(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """按题型统计标注数量和平均分。"""
+    from app.models.question import Question
+    from sqlalchemy import func as sa_func, outerjoin
+
+    stmt = (
+        select(
+            Question.question_type,
+            sa_func.count(HumanAnnotation.id).label("count"),
+            sa_func.avg(HumanAnnotation.quality_score).label("avg_score"),
+        )
+        .select_from(HumanAnnotation)
+        .join(Question, HumanAnnotation.question_id == Question.id)
+        .group_by(Question.question_type)
+    )
+    rows = (await db.execute(stmt)).all()
+    return [
+        {
+            "question_type": r.question_type or "unknown",
+            "count": r.count,
+            "avg_score": round(float(r.avg_score), 2) if r.avg_score else None,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/annotations/pending-review")
+async def pending_review(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """返回未评分的标注，按创建时间倒序，最多50条。"""
+    stmt = (
+        select(HumanAnnotation)
+        .where(HumanAnnotation.quality_score.is_(None))
+        .order_by(HumanAnnotation.created_at.desc())
+        .limit(50)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return [
+        {
+            "id": a.id,
+            "annotator_id": a.annotator_id,
+            "question_id": a.question_id,
+            "gaze_path": json.loads(a.gaze_path_json) if a.gaze_path_json else [],
+            "narration": a.narration or "",
+            "notes": a.notes or "",
+            "quality_score": None,
+            "created_at": str(a.created_at),
+        }
+        for a in rows
+    ]
+
+
 @router.get("/annotations/{question_id}")
 async def get_annotations(
     question_id: int,
@@ -276,6 +334,37 @@ async def rate_annotation(
     annotation.quality_score = score
     await db.commit()
     return {"id": annotation_id, "quality_score": score}
+
+class ExportRequest(BaseModel):
+    question_ids: list[int]
+
+
+@router.post("/annotations/export")
+async def export_annotations(
+    req: ExportRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """导出指定题目的所有标注数据。"""
+    stmt = (
+        select(HumanAnnotation)
+        .where(HumanAnnotation.question_id.in_(req.question_ids))
+        .order_by(HumanAnnotation.question_id, HumanAnnotation.id)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return [
+        {
+            "id": a.id,
+            "annotator_id": a.annotator_id,
+            "question_id": a.question_id,
+            "gaze_path": json.loads(a.gaze_path_json) if a.gaze_path_json else [],
+            "narration": a.narration or "",
+            "notes": a.notes or "",
+            "quality_score": a.quality_score,
+            "created_at": str(a.created_at),
+        }
+        for a in rows
+    ]
 
 
 # ── 长题干审题辅助 ──

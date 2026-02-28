@@ -9,8 +9,12 @@ interface AudioPlayerProps {
   rate?: string;
   autoPlay?: boolean;
   compact?: boolean;
+  /** Icon-only circular mini button, smaller than compact */
+  mini?: boolean;
   className?: string;
   label?: string;
+  /** Callback when speed changes */
+  onSpeedChange?: (speed: string) => void;
 }
 
 /**
@@ -23,8 +27,10 @@ export default function AudioPlayer({
   rate = "+0%",
   autoPlay = false,
   compact = false,
+  mini = false,
   className = "",
   label,
+  onSpeedChange,
 }: AudioPlayerProps) {
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -98,6 +104,29 @@ export default function AudioPlayer({
     { label: "快速", value: "+20%" },
   ];
 
+  if (mini) {
+    return (
+      <button
+        onClick={play}
+        disabled={loading || !text.trim()}
+        className={`inline-flex items-center justify-center w-6 h-6 rounded-full transition-all ${
+          playing
+            ? "bg-blue-500 text-white"
+            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+        } disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+        title={playing ? "点击暂停" : "朗读"}
+      >
+        {loading ? (
+          <LoadingIcon size={10} />
+        ) : playing ? (
+          <PauseIcon size={10} />
+        ) : (
+          <PlayIcon size={10} />
+        )}
+      </button>
+    );
+  }
+
   if (compact) {
     return (
       <button
@@ -161,9 +190,11 @@ export default function AudioPlayer({
             key={opt.value}
             onClick={() => {
               setSpeed(opt.value);
+              onSpeedChange?.(opt.value);
               if (playing && audioRef.current) {
-                audioRef.current.pause();
-                setPlaying(false);
+                // Dynamic speed: map rate string to playbackRate instead of stopping
+                const rateMap: Record<string, number> = { "-20%": 0.8, "+0%": 1, "+20%": 1.2 };
+                audioRef.current.playbackRate = rateMap[opt.value] ?? 1;
               }
             }}
             className={`px-2 py-0.5 rounded text-xs transition-colors ${
@@ -182,9 +213,9 @@ export default function AudioPlayer({
 
 /* ── 图标组件 ── */
 
-function SpeakerIcon() {
+function SpeakerIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
       <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
       <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
@@ -192,26 +223,26 @@ function SpeakerIcon() {
   );
 }
 
-function PlayIcon() {
+function PlayIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
       <polygon points="5 3 19 12 5 21 5 3" />
     </svg>
   );
 }
 
-function PauseIcon() {
+function PauseIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
       <rect x="6" y="4" width="4" height="16" />
       <rect x="14" y="4" width="4" height="16" />
     </svg>
   );
 }
 
-function LoadingIcon() {
+function LoadingIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
       <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
       <path d="M12 2a10 10 0 0 1 10 10" strokeOpacity="0.75" />
     </svg>

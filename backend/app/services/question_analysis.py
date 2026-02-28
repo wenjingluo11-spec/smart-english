@@ -92,6 +92,7 @@ async def analyze_question(
     question_type: str = "",
     options: str = "",
     question_id: int | None = None,
+    subject: str = "english",
 ) -> dict:
     """V1: 分析题目的题眼、审题顺序、策略。优先从缓存读取。"""
     q_hash = _hash_question(question_content + options, question_type)
@@ -112,7 +113,8 @@ async def analyze_question(
         }
 
     # 2. 调用 LLM 分析
-    user_prompt = f"【题型】{question_type}\n\n【题目内容】\n{question_content}"
+    subject_hint = "" if subject == "english" else f"\n【学科】{subject}"
+    user_prompt = f"【题型】{question_type}{subject_hint}\n\n【题目内容】\n{question_content}"
     if options:
         user_prompt += f"\n\n【选项】\n{options}"
 
@@ -162,6 +164,7 @@ async def generate_gaze_path(
     question_type: str = "",
     options: str = "",
     question_id: int | None = None,
+    subject: str = "english",
 ) -> dict:
     """V2: 生成审题轨迹（gaze_path）— 模拟学霸眼睛看题的时间轴序列。
 
@@ -206,8 +209,25 @@ async def generate_gaze_path(
             "source": "ai",
         }
 
-    # 3. 调用 LLM 生成
-    user_prompt = f"【题型】{question_type}\n\n【题目内容】\n{question_content}"
+    # 3. 调用 LLM 生成（注入学科上下文 + 知识库最佳策略）
+    subject_hint = "" if subject == "english" else f"\n【学科】{subject}（请根据该学科特点调整审题策略）"
+    kb_hint = ""
+    if question_type:
+        from app.models.behavior import CognitiveKnowledgeBase
+        kb_result = await db.execute(
+            select(CognitiveKnowledgeBase).where(
+                CognitiveKnowledgeBase.question_type == question_type,
+                CognitiveKnowledgeBase.subject == subject,
+            ).limit(1)
+        )
+        kb = kb_result.scalar_one_or_none()
+        if kb and kb.best_strategy_json:
+            import json as _json
+            strategy = _json.loads(kb.best_strategy_json)
+            if strategy.get("name"):
+                kb_hint = f"\n【参考最佳策略】{strategy['name']}: {strategy.get('description', '')}"
+
+    user_prompt = f"【题型】{question_type}{subject_hint}{kb_hint}\n\n【题目内容】\n{question_content}"
     if options:
         user_prompt += f"\n\n【选项】\n{options}"
 

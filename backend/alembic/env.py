@@ -31,7 +31,7 @@ from app.models.grammar import GrammarTopic, GrammarExercise, UserGrammarProgres
 from app.models.notification import Notification  # noqa: F401
 from app.models.question_analysis import QuestionAnalysis, HumanAnnotation  # noqa: F401
 from app.models.reading_analysis import ReadingAnalysis  # noqa: F401
-from app.models.behavior import BehaviorEvent, UserBehaviorProfile, CognitiveKnowledgeBase  # noqa: F401
+from app.models.behavior import BehaviorEvent, UserBehaviorProfile, CognitiveKnowledgeBase, CognitiveFeedbackRecord  # noqa: F401
 from app.models.exam import (  # noqa: F401
     ExamProfile, DiagnosticSession, ExamKnowledgePoint, KnowledgeMastery,
     ExamQuestion, MockExam, WeaknessBreakthrough, ScorePrediction,

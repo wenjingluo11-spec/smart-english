@@ -41,7 +41,10 @@ export default function CognitiveFeedback({
         {how_to_spot && (
           <div className="p-3 rounded-xl text-sm"
             style={{ background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.15)" }}>
-            <span className="text-xs font-semibold" style={{ color: "#2563eb" }}>学霸怎么看的：</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold" style={{ color: "#2563eb" }}>学霸怎么看的：</span>
+              {showAudio && <AudioPlayer text={how_to_spot} compact label="听" />}
+            </div>
             <span className="ml-1" style={{ color: "var(--color-text)" }}>{how_to_spot}</span>
           </div>
         )}
@@ -60,14 +63,20 @@ export default function CognitiveFeedback({
         {common_trap && (
           <div className="p-3 rounded-xl text-sm"
             style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.15)" }}>
-            <span className="text-xs font-semibold" style={{ color: "#d97706" }}>陷阱：</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold" style={{ color: "#d97706" }}>陷阱：</span>
+              {showAudio && <AudioPlayer text={common_trap} compact label="听" />}
+            </div>
             <span className="ml-1" style={{ color: "var(--color-text)" }}>{common_trap}</span>
           </div>
         )}
         {method && (
           <div className="p-3 rounded-xl text-sm"
             style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.15)" }}>
-            <span className="text-xs font-semibold" style={{ color: "#059669" }}>方法：</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold" style={{ color: "#059669" }}>方法：</span>
+              {showAudio && <AudioPlayer text={method} compact label="听" />}
+            </div>
             <span className="ml-1" style={{ color: "var(--color-text)" }}>{method}</span>
           </div>
         )}
@@ -101,7 +110,7 @@ export default function CognitiveFeedback({
           <div className="space-y-1.5">
             {key_clues.map((clue, i) => (
               <div key={i} className="flex items-start gap-2 text-sm">
-                <span className="text-blue-500 mt-0.5 shrink-0">▸</span>
+                <span className="text-blue-500 mt-0.5 shrink-0">{"\u25b8"}</span>
                 <span>
                   <span className="font-medium" style={{ color: "#2563eb" }}>{clue.text}</span>
                   <span className="mx-1" style={{ color: "var(--color-text-secondary)" }}>—</span>
@@ -119,14 +128,20 @@ export default function CognitiveFeedback({
           {common_trap && (
             <div className="flex-1 min-w-[200px] p-3 rounded-xl animate-slide-up text-sm"
               style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)" }}>
-              <div className="text-xs font-semibold mb-1" style={{ color: "#d97706" }}>常见陷阱</div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-xs font-semibold" style={{ color: "#d97706" }}>常见陷阱</span>
+                {showAudio && <AudioPlayer text={common_trap} compact label="听" />}
+              </div>
               <div style={{ color: "var(--color-text)" }}>{common_trap}</div>
             </div>
           )}
           {method && (
             <div className="flex-1 min-w-[200px] p-3 rounded-xl animate-slide-up text-sm"
               style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.15)" }}>
-              <div className="text-xs font-semibold mb-1" style={{ color: "#059669" }}>解题方法</div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-xs font-semibold" style={{ color: "#059669" }}>解题方法</span>
+                {showAudio && <AudioPlayer text={method} compact label="听" />}
+              </div>
               <div style={{ color: "var(--color-text)" }}>{method}</div>
             </div>
           )}
@@ -148,7 +163,7 @@ export default function CognitiveFeedback({
                 </span>
                 <div>
                   <span className="font-medium" style={{ color: "var(--color-text)" }}>{step.target}</span>
-                  <span className="mx-1" style={{ color: "var(--color-text-secondary)" }}>→</span>
+                  <span className="mx-1" style={{ color: "var(--color-text-secondary)" }}>{"\u2192"}</span>
                   <span style={{ color: "var(--color-text-secondary)" }}>{step.action}</span>
                 </div>
               </div>

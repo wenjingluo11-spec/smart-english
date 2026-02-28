@@ -7,6 +7,7 @@ import ExpertDemo from "@/components/cognitive/ExpertDemo";
 import CognitiveFeedback from "@/components/cognitive/CognitiveFeedback";
 import { useEnhancementConfig } from "@/hooks/use-enhancement-config";
 import { tracker } from "@/lib/behavior-tracker";
+import CognitiveEntryButton from "@/components/cognitive/CognitiveEntryButton";
 
 const QUICK_TAGS = [
   { label: "阅读理解", prompt: "阅读理解" },
@@ -198,6 +199,9 @@ export default function CustomQuizPage() {
             提交批改
           </button>
         </div>
+      )}
+      {currentCustomQuiz && (
+        <CognitiveEntryButton questionId={1} questionText={currentCustomQuiz.questions[0]?.question ?? ""} source="exam" />
       )}
     </div>
   );

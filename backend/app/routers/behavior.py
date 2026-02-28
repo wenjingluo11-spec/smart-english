@@ -92,6 +92,9 @@ async def run_distill(
     db: AsyncSession = Depends(get_db),
 ):
     """触发知识蒸馏（管理员功能）。"""
+    if not getattr(user, "is_admin", False):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="仅管理员可执行蒸馏")
     result = await distill_knowledge(db, req.question_type, req.topic, req.difficulty)
     return result
 
