@@ -15,23 +15,37 @@ interface Props {
   exercise: Exercise;
   lessonId: number;
   exerciseIndex: number;
+  transferSentence: string;
 }
 
-export default function ExerciseCard({ exercise, lessonId, exerciseIndex }: Props) {
+export default function ExerciseCard({ exercise, lessonId, exerciseIndex, transferSentence }: Props) {
   const [answer, setAnswer] = useState("");
   const [result, setResult] = useState<{ is_correct: boolean; correct_answer: string; explanation: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async () => {
     if (!answer.trim()) return;
+    if (!transferSentence.trim()) {
+      setError("请先完成迁移句，再提交练习答案。");
+      return;
+    }
     setLoading(true);
+    setError("");
     try {
       const res = await api.post<{ is_correct: boolean; correct_answer: string; explanation: string }>(
         "/screenshot/exercise",
-        { lesson_id: lessonId, exercise_index: exerciseIndex, answer }
+        {
+          lesson_id: lessonId,
+          exercise_index: exerciseIndex,
+          answer,
+          transfer_sentence: transferSentence,
+        }
       );
       setResult(res);
-    } catch { /* ignore */ }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "提交失败");
+    }
     setLoading(false);
   };
 
@@ -77,14 +91,17 @@ export default function ExerciseCard({ exercise, lessonId, exerciseIndex }: Prop
       )}
 
       {!result ? (
-        <button
-          onClick={handleSubmit}
-          disabled={!answer.trim() || loading}
-          className="w-full py-2 rounded-lg text-white text-sm font-medium"
-          style={{ background: "var(--color-primary)", opacity: !answer.trim() || loading ? 0.5 : 1 }}
-        >
-          {loading ? "检查中..." : "提交答案"}
-        </button>
+        <>
+          {error && <p className="text-xs mb-2" style={{ color: "#b91c1c" }}>{error}</p>}
+          <button
+            onClick={handleSubmit}
+            disabled={!answer.trim() || loading}
+            className="w-full py-2 rounded-lg text-white text-sm font-medium"
+            style={{ background: "var(--color-primary)", opacity: !answer.trim() || loading ? 0.5 : 1 }}
+          >
+            {loading ? "检查中..." : "提交答案"}
+          </button>
+        </>
       ) : (
         <div
           className="p-3 rounded-lg text-sm"

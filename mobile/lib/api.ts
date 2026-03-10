@@ -52,7 +52,15 @@ export const api = {
 export function streamChat(
   message: string,
   history: { role: string; content: string }[],
-  onChunk: (text: string) => void
+  onChunk: (text: string) => void,
+  options?: {
+    mode?: string;
+    sessionId?: number | null;
+    reflectionText?: string;
+    guidanceLevel?: "socratic" | "mirror" | "hybrid";
+    hintBudget?: number;
+    allowDirectAnswer?: boolean;
+  }
 ): Promise<void> {
   return new Promise(async (resolve, reject) => {
     const token = await getToken();
@@ -73,6 +81,17 @@ export function streamChat(
     };
     xhr.onload = () => resolve();
     xhr.onerror = () => reject(new Error("SSE 连接失败"));
-    xhr.send(JSON.stringify({ message, history }));
+    xhr.send(
+      JSON.stringify({
+        message,
+        history,
+        mode: options?.mode || "free",
+        session_id: options?.sessionId ?? null,
+        reflection_text: options?.reflectionText || "",
+        guidance_level: options?.guidanceLevel || "socratic",
+        hint_budget: options?.hintBudget ?? 2,
+        allow_direct_answer: options?.allowDirectAnswer ?? false,
+      })
+    );
   });
 }

@@ -6,6 +6,7 @@ from app.models.clinic import ErrorPattern, TreatmentPlan
 from app.models.writing import WritingSubmission
 from app.models.learning import LearningRecord
 from app.services.llm import chat_once_json
+from app.services.cognitive_orchestrator import score_reflection_quality, to_mirror_level
 
 DIAGNOSIS_SYSTEM = """你是一位英语学习诊断专家。根据学生的错误记录，分析错误模式。
 返回 JSON：
@@ -33,6 +34,24 @@ TREATMENT_SYSTEM = """你是一位英语学习治疗师。根据错误模式，�
   ]
 }
 请生成 5 道针对性练习题，难度递进。"""
+
+
+def _severity_to_tqi(severity: str) -> float:
+    mapping = {
+        "severe": 0.30,
+        "moderate": 0.50,
+        "mild": 0.70,
+    }
+    return mapping.get((severity or "moderate").lower(), 0.50)
+
+
+def _required_reflection_score(severity: str) -> float:
+    mapping = {
+        "severe": 0.55,
+        "moderate": 0.45,
+        "mild": 0.35,
+    }
+    return mapping.get((severity or "moderate").lower(), 0.45)
 
 
 async def run_diagnosis(user_id: int, db: AsyncSession) -> dict:
@@ -80,23 +99,35 @@ async def run_diagnosis(user_id: int, db: AsyncSession) -> dict:
 
     # 保存错误模式
     patterns_out = []
+    tqi_scores: list[float] = []
     for p in analysis.get("patterns", []):
+        severity = p.get("severity", "moderate")
+        estimated_tqi = _severity_to_tqi(severity)
+        mirror_level = to_mirror_level(estimated_tqi)
+        diagnosis = p.get("diagnosis", {}) or {}
+        if isinstance(diagnosis, dict):
+            diagnosis["mirror_level"] = mirror_level
+            diagnosis["estimated_tqi"] = estimated_tqi
+
         pattern = ErrorPattern(
             user_id=user_id,
             pattern_type=p.get("pattern_type", "grammar"),
             title=p.get("title", ""),
             description=p.get("description", ""),
-            severity=p.get("severity", "moderate"),
+            severity=severity,
             evidence_json=p.get("evidence"),
-            diagnosis_json=p.get("diagnosis"),
+            diagnosis_json=diagnosis,
         )
         db.add(pattern)
         await db.flush()
+        tqi_scores.append(estimated_tqi)
         patterns_out.append({
             "id": pattern.id, "pattern_type": pattern.pattern_type,
             "title": pattern.title, "description": pattern.description,
             "severity": pattern.severity, "evidence_json": pattern.evidence_json,
             "diagnosis_json": pattern.diagnosis_json, "status": pattern.status,
+            "mirror_level": mirror_level,
+            "estimated_tqi": estimated_tqi,
             "created_at": pattern.created_at.isoformat() if pattern.created_at else "",
         })
 
@@ -104,6 +135,8 @@ async def run_diagnosis(user_id: int, db: AsyncSession) -> dict:
         "patterns": patterns_out,
         "summary": analysis.get("summary", ""),
         "total_errors_analyzed": len(evidence_parts),
+        "estimated_tqi": round(sum(tqi_scores) / len(tqi_scores), 3) if tqi_scores else None,
+        "mirror_level": to_mirror_level(sum(tqi_scores) / len(tqi_scores)) if tqi_scores else None,
     }
 
 
@@ -122,10 +155,20 @@ async def generate_treatment(pattern_id: int, user_id: int, db: AsyncSession) ->
         plan_data = {"exercises": []}
 
     exercises = plan_data.get("exercises", [])
+    required_reflection = _required_reflection_score(pattern.severity)
+    pattern_diag = pattern.diagnosis_json or {}
+    mirror_level = pattern_diag.get("mirror_level") if isinstance(pattern_diag, dict) else None
+    if not mirror_level:
+        mirror_level = to_mirror_level(_severity_to_tqi(pattern.severity))
+
     plan = TreatmentPlan(
         user_id=user_id,
         pattern_id=pattern_id,
-        exercises_json={"exercises": exercises},
+        exercises_json={
+            "exercises": exercises,
+            "required_reflection_score": required_reflection,
+            "mirror_level": mirror_level,
+        },
         total_exercises=len(exercises),
         status="in_progress",
     )
@@ -138,28 +181,50 @@ async def generate_treatment(pattern_id: int, user_id: int, db: AsyncSession) ->
         "exercises_json": plan.exercises_json,
         "total_exercises": plan.total_exercises,
         "completed_exercises": 0, "status": plan.status,
+        "required_reflection_score": required_reflection,
+        "mirror_level": mirror_level,
     }
 
 
-async def submit_exercise(plan_id: int, exercise_index: int, answer: str, user_id: int, db: AsyncSession) -> dict:
+async def submit_exercise(
+    plan_id: int,
+    exercise_index: int,
+    answer: str,
+    user_id: int,
+    db: AsyncSession,
+    reflection_text: str | None = None,
+) -> dict:
     """提交治疗练习答案。"""
     result = await db.execute(select(TreatmentPlan).where(TreatmentPlan.id == plan_id, TreatmentPlan.user_id == user_id))
     plan = result.scalar_one_or_none()
     if not plan:
         return {"error": "治疗计划不存在"}
 
-    exercises = (plan.exercises_json or {}).get("exercises", [])
+    payload = plan.exercises_json or {}
+    exercises = payload.get("exercises", [])
+    required_reflection = float(payload.get("required_reflection_score", 0.45))
     if exercise_index < 0 or exercise_index >= len(exercises):
         return {"error": "练习不存在"}
 
     ex = exercises[exercise_index]
     correct = ex.get("answer", "")
     is_correct = answer.strip().lower() == correct.strip().lower()
+    reflection_score = score_reflection_quality((reflection_text or "").strip())
 
-    if is_correct:
+    already_completed = bool(ex.get("completed"))
+    if is_correct and not already_completed:
         plan.completed_exercises = min(plan.completed_exercises + 1, plan.total_exercises)
+        ex["completed"] = True
+    ex["reflection_text"] = (reflection_text or "").strip()
+    ex["reflection_score"] = reflection_score
+    payload["exercises"] = exercises
+    plan.exercises_json = payload
 
-    plan_completed = plan.completed_exercises >= plan.total_exercises
+    completed_reflections = [float(e.get("reflection_score", 0.0)) for e in exercises if e.get("completed")]
+    avg_reflection = sum(completed_reflections) / len(completed_reflections) if completed_reflections else 0.0
+    reflection_ready = avg_reflection >= required_reflection
+    plan_completed = plan.completed_exercises >= plan.total_exercises and reflection_ready
+
     if plan_completed:
         plan.status = "completed"
         # 标记错误模式为已解决
@@ -167,6 +232,8 @@ async def submit_exercise(plan_id: int, exercise_index: int, answer: str, user_i
         pattern = result2.scalar_one_or_none()
         if pattern:
             pattern.status = "resolved"
+    else:
+        plan.status = "in_progress"
 
     await db.flush()
 
@@ -177,4 +244,8 @@ async def submit_exercise(plan_id: int, exercise_index: int, answer: str, user_i
         "progress": plan.completed_exercises,
         "total": plan.total_exercises,
         "plan_completed": plan_completed,
+        "reflection_quality_score": round(reflection_score, 3),
+        "avg_reflection_score": round(avg_reflection, 3),
+        "required_reflection_score": round(required_reflection, 3),
+        "reflection_required": not reflection_ready,
     }

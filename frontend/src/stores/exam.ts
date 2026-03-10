@@ -269,7 +269,12 @@ interface ExamState {
 
   fetchTrainingSections: () => Promise<void>;
   fetchTrainingQuestions: (section: string, limit?: number) => Promise<void>;
-  submitTrainingAnswer: (questionId: number, answer: string) => Promise<Record<string, unknown>>;
+  submitTrainingAnswer: (
+    questionId: number,
+    answer: string,
+    strategyChoice?: string,
+    reflectionText?: string
+  ) => Promise<Record<string, unknown>>;
   fetchKnowledgePoints: (section?: string) => Promise<void>;
 
   startMock: (examType?: string) => Promise<void>;
@@ -444,8 +449,13 @@ export const useExamStore = create<ExamState>((set, get) => ({
     }
   },
 
-  submitTrainingAnswer: async (questionId, answer) => {
-    const res = await api.post<Record<string, unknown>>("/exam/training/submit", { question_id: questionId, answer });
+  submitTrainingAnswer: async (questionId, answer, strategyChoice, reflectionText) => {
+    const res = await api.post<Record<string, unknown>>("/exam/training/submit", {
+      question_id: questionId,
+      answer,
+      strategy_choice: strategyChoice || null,
+      reflection_text: reflectionText || null,
+    });
     return res;
   },
 

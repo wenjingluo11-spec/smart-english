@@ -14,6 +14,13 @@ class ScreenshotExerciseSubmit(BaseModel):
     lesson_id: int
     exercise_index: int
     answer: str
+    transfer_sentence: str | None = None
+
+
+class ScreenshotReflectionSubmit(BaseModel):
+    lesson_id: int
+    delta_reflection: str
+    transfer_sentence: str
 
 
 class ScreenshotExerciseResult(BaseModel):

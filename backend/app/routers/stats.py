@@ -231,6 +231,17 @@ async def report_peer_rank(
     return await get_peer_comparison(user.id, db)
 
 
+@router.get("/cognitive-gain")
+async def report_cognitive_gain(
+    days: int = 14,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """认知增益统计。"""
+    from app.services.reports import get_cognitive_gain
+    return await get_cognitive_gain(user.id, days, db)
+
+
 @router.get("/learning-report")
 async def learning_report(
     user: User = Depends(get_current_user),

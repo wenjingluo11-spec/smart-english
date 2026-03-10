@@ -12,16 +12,17 @@ const MODES = [
   { key: "explain", icon: "📝", label: "题目讲解", desc: "粘贴题目获取详细解析" },
 ];
 
+/** 根据当前 Tutor 模式切换不同的教学场景。 */
 export default function ModeSelector({ current, onSelect }: ModeSelectorProps) {
   return (
-    <div className="grid grid-cols-4 gap-2 mb-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {MODES.map((m) => {
         const active = current === m.key;
         return (
           <button
             key={m.key}
             onClick={() => onSelect(m.key)}
-            className="rounded-xl p-3 text-center border transition-all"
+            className="rounded-2xl p-3 text-center border transition-all"
             style={{
               borderColor: active ? "var(--color-primary)" : "var(--color-border)",
               background: active ? "var(--color-primary-light, #dbeafe)" : "var(--color-surface)",

@@ -56,6 +56,8 @@ class SectionMasteryOut(BaseModel):
 class TrainingSubmitRequest(BaseModel):
     question_id: int
     answer: str
+    strategy_choice: str | None = None
+    reflection_text: str | None = None
 
 
 class TrainingSubmitResult(BaseModel):
@@ -66,6 +68,10 @@ class TrainingSubmitResult(BaseModel):
     knowledge_point: str
     mastery_before: float
     mastery_after: float
+    strategy_choice: str | None = None
+    reflection_text: str | None = None
+    reasoning_quality_score: float | None = None
+    reasoning_quality_delta: float | None = None
     xp: dict | None = None
 
 
@@ -87,6 +93,12 @@ class MockStartRequest(BaseModel):
 class MockSubmitRequest(BaseModel):
     mock_id: int
     answers: list[dict]  # [{question_id, answer, time_spent}]
+
+
+class MockReviewSubmitRequest(BaseModel):
+    mock_id: int
+    question_id: int
+    reflection_text: str
 
 
 class MockExamOut(BaseModel):

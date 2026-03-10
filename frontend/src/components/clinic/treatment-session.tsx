@@ -7,6 +7,7 @@ export default function TreatmentSession() {
   const { currentPlan, submitExercise } = useClinicStore();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answer, setAnswer] = useState("");
+  const [reflection, setReflection] = useState("");
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -17,10 +18,10 @@ export default function TreatmentSession() {
   if (!exercise) return null;
 
   const handleSubmit = async () => {
-    if (!answer.trim()) return;
+    if (!answer.trim() || !reflection.trim()) return;
     setLoading(true);
     try {
-      const res = await submitExercise(currentPlan.id, currentIndex, answer);
+      const res = await submitExercise(currentPlan.id, currentIndex, answer, reflection);
       setResult(res);
     } catch { /* ignore */ }
     setLoading(false);
@@ -29,6 +30,7 @@ export default function TreatmentSession() {
   const handleNext = () => {
     setCurrentIndex((i) => i + 1);
     setAnswer("");
+    setReflection("");
     setResult(null);
   };
 
@@ -87,12 +89,22 @@ export default function TreatmentSession() {
           />
         )}
 
+        <textarea
+          value={reflection}
+          onChange={(e) => setReflection(e.target.value)}
+          disabled={!!result}
+          placeholder="写下你的思路/错因（必填）..."
+          className="w-full px-3 py-2 rounded-lg text-sm mb-4 resize-none"
+          rows={3}
+          style={{ background: "var(--color-bg)", color: "var(--color-text)", border: "1px solid var(--color-border)" }}
+        />
+
         {!result ? (
           <button
             onClick={handleSubmit}
-            disabled={!answer.trim() || loading}
+            disabled={!answer.trim() || !reflection.trim() || loading}
             className="w-full py-2.5 rounded-lg text-white text-sm font-medium"
-            style={{ background: "var(--color-primary)", opacity: !answer.trim() || loading ? 0.5 : 1 }}
+            style={{ background: "var(--color-primary)", opacity: !answer.trim() || !reflection.trim() || loading ? 0.5 : 1 }}
           >
             {loading ? "检查中..." : "提交答案"}
           </button>
@@ -109,6 +121,16 @@ export default function TreatmentSession() {
                 {result.is_correct ? "✅ 正确！" : `❌ 错误，正确答案：${result.correct_answer}`}
               </p>
               <p className="mt-1 text-xs">{String(result.explanation || "")}</p>
+              {result.reflection_quality_score !== undefined && (
+                <p className="mt-1 text-xs">
+                  反思质量：{Math.round(Number(result.reflection_quality_score || 0) * 100)}%
+                  {" · "}平均：{Math.round(Number(result.avg_reflection_score || 0) * 100)}%
+                  {" · "}门槛：{Math.round(Number(result.required_reflection_score || 0) * 100)}%
+                </p>
+              )}
+              {result.reflection_required ? (
+                <p className="mt-1 text-xs">反思质量尚未达标，继续完成高质量解释后可结疗。</p>
+              ) : null}
             </div>
 
             {currentIndex < exercises.length - 1 ? (

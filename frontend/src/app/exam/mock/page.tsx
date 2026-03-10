@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useExamStore } from "@/stores/exam";
+import { api } from "@/lib/api";
 import Link from "next/link";
 
 const PART_LABELS: Record<number, string> = { 1: "第一部分", 2: "第二部分", 3: "第三部分", 4: "第四部分" };
@@ -21,10 +22,41 @@ interface ExamPage {
   isFirstPageOfPart: boolean;
 }
 
+interface MockRisk {
+  score: number;
+  level: string;
+  empty_rate: number;
+  accuracy: number;
+  fast_submit_rate: number;
+  reasons: string[];
+}
+
+interface MockReviewTask {
+  question_id: number;
+  section: string;
+  content: string;
+  student_answer: string;
+  correct_answer: string;
+  explanation: string;
+  review_prompt?: string;
+  review_status?: string;
+  reflection_quality?: number;
+}
+
+interface MockReviewFeedback {
+  reflection_quality: number;
+  feedback: {
+    coach_reply?: string;
+    bias?: string;
+    next_action?: string;
+    counter_example?: string;
+  };
+}
+
 export default function MockPage() {
   const {
     profile, currentMock, mockResult, mockHistory, loading,
-    startMock, submitMock, fetchMockResult, fetchMockHistory,
+    startMock, submitMock, fetchMockHistory,
   } = useExamStore();
 
   const [phase, setPhase] = useState<"list" | "exam" | "result">("list");
@@ -32,6 +64,9 @@ export default function MockPage() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [showAnswerCard, setShowAnswerCard] = useState(false);
+  const [reviewInputs, setReviewInputs] = useState<Record<number, string>>({});
+  const [reviewResults, setReviewResults] = useState<Record<number, MockReviewFeedback>>({});
+  const [reviewSubmitting, setReviewSubmitting] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { fetchMockHistory(); }, [fetchMockHistory]);
@@ -49,6 +84,8 @@ export default function MockPage() {
     setPageIdx(0);
     setAnswers({});
     setShowAnswerCard(false);
+    setReviewInputs({});
+    setReviewResults({});
   };
 
   useEffect(() => {
@@ -112,13 +149,6 @@ export default function MockPage() {
 
   const currentPage = pages[pageIdx] as ExamPage | undefined;
 
-  // Map question id -> page index (for answer card navigation)
-  const questionPageMap = useMemo(() => {
-    const map: Record<number, number> = {};
-    pages.forEach((p, pi) => p.questions.forEach(q => { map[q.id] = pi; }));
-    return map;
-  }, [pages]);
-
   const handleSelectOption = (questionId: number, opt: string) => {
     const letter = opt.match(/^([A-G])/)?.[1] ?? opt;
     setAnswers(prev => ({ ...prev, [questionId]: letter }));
@@ -136,6 +166,8 @@ export default function MockPage() {
       question_id: Number(qid), answer: ans, time_spent: 0,
     }));
     await submitMock(answerList);
+    setReviewInputs({});
+    setReviewResults({});
     setPhase("result");
   };
 
@@ -143,6 +175,65 @@ export default function MockPage() {
     `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
 
   const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
+
+  const resultScore = (mockResult?.score || mockResult?.score_json) as { total: number; max: number; sections: Record<string, { label?: string; score: number; max: number }> } | undefined;
+  const resultReport = (mockResult?.ai_report || mockResult?.ai_report_json) as {
+    overall_comment?: string;
+    strengths?: string[];
+    weaknesses?: string[];
+    suggestions?: string[];
+    estimated_rank?: string;
+    cognitive_offload_risk?: MockRisk;
+    review_tasks?: MockReviewTask[];
+    review_records?: Record<string, { reflection_quality?: number; feedback?: MockReviewFeedback["feedback"] }>;
+    review_progress?: { completed: number; total: number; rate: number };
+  } | undefined;
+  const resultRisk = ((mockResult?.cognitive_offload_risk || resultReport?.cognitive_offload_risk) as MockRisk | undefined);
+  const reviewTasks = ((mockResult?.review_tasks || resultReport?.review_tasks || []) as MockReviewTask[]);
+  const reviewProgress = resultReport?.review_progress;
+  const mockId = Number((mockResult?.mock_id ?? mockResult?.id) || 0);
+
+  useEffect(() => {
+    if (!resultReport?.review_records) return;
+    const records = resultReport.review_records;
+    const parsed: Record<number, MockReviewFeedback> = {};
+    Object.entries(records).forEach(([key, value]) => {
+      const qid = Number(key);
+      if (!Number.isNaN(qid)) {
+        parsed[qid] = {
+          reflection_quality: Number(value?.reflection_quality || 0),
+          feedback: value?.feedback || {},
+        };
+      }
+    });
+    setReviewResults(parsed);
+  }, [resultReport?.review_records]);
+
+  const handleReviewSubmit = async (task: MockReviewTask) => {
+    const reflectionText = (reviewInputs[task.question_id] || "").trim();
+    if (!reflectionText || !mockId) return;
+    setReviewSubmitting(task.question_id);
+    try {
+      const res = await api.post<{
+        question_id: number;
+        reflection_quality: number;
+        feedback: MockReviewFeedback["feedback"];
+      }>("/exam/mock/review", {
+        mock_id: mockId,
+        question_id: task.question_id,
+        reflection_text: reflectionText,
+      });
+      setReviewResults(prev => ({
+        ...prev,
+        [task.question_id]: {
+          reflection_quality: res.reflection_quality,
+          feedback: res.feedback || {},
+        },
+      }));
+    } finally {
+      setReviewSubmitting(null);
+    }
+  };
 
   // ── No profile ──
   if (!profile) {
@@ -157,23 +248,21 @@ export default function MockPage() {
 
   // ── Result phase ──
   if (phase === "result" && mockResult) {
-    const score = mockResult.score as { total: number; max: number; sections: Record<string, { label?: string; score: number; max: number }> } | undefined;
-    const report = mockResult.ai_report as { overall_comment?: string; strengths?: string[]; weaknesses?: string[]; suggestions?: string[]; estimated_rank?: string } | undefined;
     return (
       <div className="max-w-2xl mx-auto space-y-4 p-4">
         <div className="text-center py-6">
           <div className="text-5xl font-bold mb-2" style={{ color: "var(--color-primary)" }}>
-            {score?.total ?? 0}<span className="text-lg font-normal" style={{ color: "var(--color-text-secondary)" }}>/{score?.max ?? 150}</span>
+            {resultScore?.total ?? 0}<span className="text-lg font-normal" style={{ color: "var(--color-text-secondary)" }}>/{resultScore?.max ?? 150}</span>
           </div>
           <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>模考完成</p>
-          {report?.estimated_rank && (
-            <p className="text-sm mt-1" style={{ color: "var(--color-primary)" }}>预估排名：{report.estimated_rank}</p>
+          {resultReport?.estimated_rank && (
+            <p className="text-sm mt-1" style={{ color: "var(--color-primary)" }}>预估排名：{resultReport.estimated_rank}</p>
           )}
         </div>
 
-        {score?.sections && (
+        {resultScore?.sections && (
           <div className="grid grid-cols-2 gap-2">
-            {Object.entries(score.sections).map(([sec, s]) => (
+            {Object.entries(resultScore.sections).map(([sec, s]) => (
               <div key={sec} className="p-3 rounded-xl" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
                 <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>{s.label || sec}</p>
                 <p className="text-lg font-bold" style={{ color: "var(--color-text)" }}>{s.score}/{s.max}</p>
@@ -182,21 +271,96 @@ export default function MockPage() {
           </div>
         )}
 
-        {report?.overall_comment && (
+        {resultReport?.overall_comment && (
           <div className="p-4 rounded-xl" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
             <p className="text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>AI 分析</p>
-            <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{report.overall_comment}</p>
+            <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{resultReport.overall_comment}</p>
           </div>
         )}
 
-        {report?.suggestions && report.suggestions.length > 0 && (
+        {resultReport?.suggestions && resultReport.suggestions.length > 0 && (
           <div className="p-4 rounded-xl" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
             <p className="text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>改进建议</p>
             <ul className="space-y-1">
-              {report.suggestions.map((s, i) => (
+              {resultReport.suggestions.map((s, i) => (
                 <li key={i} className="text-sm" style={{ color: "var(--color-text-secondary)" }}>• {s}</li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {resultRisk && (
+          <div className="p-4 rounded-xl" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium" style={{ color: "var(--color-text)" }}>认知卸载风险</p>
+              <span
+                className="text-xs px-2 py-0.5 rounded-full"
+                style={{
+                  background: resultRisk.level === "high" ? "#fee2e2" : resultRisk.level === "medium" ? "#fef3c7" : "#dcfce7",
+                  color: resultRisk.level === "high" ? "#991b1b" : resultRisk.level === "medium" ? "#92400e" : "#166534",
+                }}
+              >
+                {resultRisk.level.toUpperCase()} · {resultRisk.score}
+              </span>
+            </div>
+            <div className="mt-2 space-y-1 text-xs" style={{ color: "var(--color-text-secondary)" }}>
+              {resultRisk.reasons.map((item, idx) => (
+                <p key={idx}>• {item}</p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {reviewTasks.length > 0 && (
+          <div className="p-4 rounded-xl space-y-3" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium" style={{ color: "var(--color-text)" }}>阶段B：错题复盘</p>
+              {reviewProgress && (
+                <span className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
+                  {reviewProgress.completed}/{reviewProgress.total}
+                </span>
+              )}
+            </div>
+            {reviewTasks.map((task) => {
+              const feedback = reviewResults[task.question_id];
+              const draft = reviewInputs[task.question_id] || "";
+              return (
+                <div key={task.question_id} className="rounded-lg p-3 space-y-2" style={{ background: "var(--color-bg)", border: "1px solid var(--color-border)" }}>
+                  <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>{task.section}</p>
+                  <p className="text-sm" style={{ color: "var(--color-text)" }}>{task.content}</p>
+                  <div className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
+                    你的答案：{task.student_answer || "（空）"} ｜ 正确答案：{task.correct_answer}
+                  </div>
+                  {task.explanation && (
+                    <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>解析：{task.explanation}</p>
+                  )}
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setReviewInputs(prev => ({ ...prev, [task.question_id]: e.target.value }))}
+                    placeholder={task.review_prompt || "请写下你的复盘思路"}
+                    className="w-full rounded-lg p-2 text-sm"
+                    rows={3}
+                    style={{ background: "var(--color-card)", color: "var(--color-text)", border: "1px solid var(--color-border)" }}
+                  />
+                  <button
+                    onClick={() => handleReviewSubmit(task)}
+                    disabled={!draft.trim() || reviewSubmitting === task.question_id}
+                    className="px-3 py-1.5 rounded-lg text-xs text-white"
+                    style={{ background: "var(--color-primary)", opacity: !draft.trim() || reviewSubmitting === task.question_id ? 0.5 : 1 }}
+                  >
+                    {reviewSubmitting === task.question_id ? "提交中..." : "提交复盘"}
+                  </button>
+                  {feedback && (
+                    <div className="rounded-lg p-2 text-xs space-y-1" style={{ background: "#eff6ff", color: "#1e3a8a" }}>
+                      <p>反思质量：{(feedback.reflection_quality * 100).toFixed(0)}%</p>
+                      {feedback.feedback.coach_reply && <p>{feedback.feedback.coach_reply}</p>}
+                      {feedback.feedback.next_action && <p>下一步：{feedback.feedback.next_action}</p>}
+                      {feedback.feedback.counter_example && <p>反证提问：{feedback.feedback.counter_example}</p>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 

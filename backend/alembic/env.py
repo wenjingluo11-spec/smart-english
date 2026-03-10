@@ -34,6 +34,9 @@ from app.models.exam import (  # noqa: F401
     ExamQuestion, MockExam, WeaknessBreakthrough, ScorePrediction,
     FlowSession, ExamTimeRecord, ErrorGene, CustomQuizSession, DailySprintPlan,
 )
+from app.models.cognitive import (  # noqa: F401
+    CognitiveSession, CognitiveTurn, ReflectionEntry, TeachingQualityMetric, CognitiveGainSnapshot,
+)
 
 target_metadata = Base.metadata
 

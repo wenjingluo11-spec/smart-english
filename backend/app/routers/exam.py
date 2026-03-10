@@ -11,6 +11,7 @@ from app.models.exam import ExamProfile, DiagnosticSession, ExamKnowledgePoint, 
 from app.schemas.exam import (
     ExamProfileCreate, ExamProfileOut, DiagnosticStartRequest, DiagnosticSubmitRequest,
     GeneratePlanRequest, TrainingSubmitRequest, MockStartRequest, MockSubmitRequest,
+    MockReviewSubmitRequest,
     BreakthroughExerciseSubmit, ExamDashboardOut,
     FlowStartRequest, FlowAnswerRequest, FlowEndRequest,
     TimeRecordRequest, GeneFixSubmitRequest,
@@ -22,7 +23,7 @@ from app.services.exam_training import (
     get_section_masteries, get_adaptive_questions, submit_training_answer,
     get_knowledge_points_with_mastery, SECTION_STRATEGIES,
 )
-from app.services.exam_mock import start_mock, submit_mock, get_mock_result
+from app.services.exam_mock import start_mock, submit_mock, get_mock_result, submit_mock_review
 from app.services.exam_weakness import get_weakness_list, start_breakthrough, submit_breakthrough_exercise
 from app.services.exam_prediction import predict_score, get_prediction_history, generate_weekly_report
 from app.services.exam_flow import start_flow, submit_flow_answer, end_flow, get_flow_history
@@ -236,7 +237,14 @@ async def training_submit(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await submit_training_answer(user.id, req.question_id, req.answer, db)
+    result = await submit_training_answer(
+        user.id,
+        req.question_id,
+        req.answer,
+        db,
+        strategy_choice=req.strategy_choice,
+        reflection_text=req.reflection_text,
+    )
     if "error" in result:
         raise HTTPException(400, result["error"])
     if result.get("is_correct"):
@@ -312,6 +320,25 @@ async def mock_submit(
             )
     xp_result = await award_xp(user.id, "mock_complete", db)
     result["xp"] = xp_result
+    await db.commit()
+    return result
+
+
+@router.post("/mock/review")
+async def mock_review(
+    req: MockReviewSubmitRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await submit_mock_review(
+        user_id=user.id,
+        mock_id=req.mock_id,
+        question_id=req.question_id,
+        reflection_text=req.reflection_text,
+        db=db,
+    )
+    if "error" in result:
+        raise HTTPException(400, result["error"])
     await db.commit()
     return result
 

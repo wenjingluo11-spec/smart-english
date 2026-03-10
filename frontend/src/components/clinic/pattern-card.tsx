@@ -72,6 +72,14 @@ export default function PatternCard({ pattern }: Props) {
                   <p className="text-sm" style={{ color: "var(--color-text)" }}>{(pattern.diagnosis_json as { root_cause: string }).root_cause}</p>
                 </div>
               )}
+              {(pattern.diagnosis_json as { mirror_level?: string }).mirror_level && (
+                <div>
+                  <p className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>建议镜像层级</p>
+                  <p className="text-sm" style={{ color: "var(--color-text)" }}>
+                    {(pattern.diagnosis_json as { mirror_level: string }).mirror_level}
+                  </p>
+                </div>
+              )}
               {(pattern.diagnosis_json as { l1_interference?: string }).l1_interference && (
                 <div>
                   <p className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>母语干扰</p>

@@ -27,6 +27,9 @@ from app.models.exam import (  # noqa: F401
     ExamProfile, DiagnosticSession, ExamKnowledgePoint, KnowledgeMastery,
     ExamQuestion, MockExam, WeaknessBreakthrough, ScorePrediction,
 )
+from app.models.cognitive import (  # noqa: F401
+    CognitiveSession, CognitiveTurn, ReflectionEntry, TeachingQualityMetric, CognitiveGainSnapshot,
+)
 from app.database import engine, async_session
 from app.services.auth import hash_password
 from app.utils.data_import import import_jsonl

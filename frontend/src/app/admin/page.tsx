@@ -13,11 +13,30 @@ interface AdminStats {
   readings: number;
 }
 
-type Tab = "dashboard" | "textbook" | "grammar" | "reading";
+interface CognitiveGainReport {
+  window_days: number;
+  from_date: string;
+  summary: {
+    avg_tqi: number;
+    tqi_samples: number;
+    avg_reflection_quality: number;
+    reflection_count: number;
+    hint_dependency_rate: number;
+    independent_solve_rate: number;
+    cognitive_gain: number;
+  };
+  daily: {
+    tqi: { date: string; avg_tqi: number; samples: number }[];
+    reflection: { date: string; avg_reflection: number; count: number }[];
+  };
+}
+
+type Tab = "dashboard" | "textbook" | "grammar" | "reading" | "orchestration";
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [cognitiveGain, setCognitiveGain] = useState<CognitiveGainReport | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -32,6 +51,13 @@ export default function AdminPage() {
   useEffect(() => {
     api.get<AdminStats>("/admin/stats").then(setStats).catch((e) => setError(e.message || "无权限"));
   }, []);
+
+  useEffect(() => {
+    if (tab !== "orchestration") return;
+    api.get<CognitiveGainReport>("/stats/cognitive-gain?days=14")
+      .then(setCognitiveGain)
+      .catch(() => setCognitiveGain(null));
+  }, [tab]);
 
   const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 3000); };
 
@@ -151,6 +177,7 @@ export default function AdminPage() {
             { key: "textbook", label: "教材" },
             { key: "grammar", label: "语法" },
             { key: "reading", label: "阅读" },
+            { key: "orchestration", label: "认知编排" },
           ] as { key: Tab; label: string }[]).map((t) => (
             <button
               key={t.key}
@@ -291,6 +318,69 @@ export default function AdminPage() {
             <button onClick={handleCreateReading} disabled={loading || !readingForm.title || !readingForm.content} className={btnCls} style={{ background: "var(--color-primary)" }}>
               创建阅读材料
             </button>
+          </div>
+        )}
+
+        {/* Cognitive orchestration */}
+        {tab === "orchestration" && (
+          <div className="space-y-4">
+            {!cognitiveGain ? (
+              <div className="rounded-xl border p-4 text-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text-secondary)" }}>
+                暂无认知增益数据（请先完成带反思的学习交互）。
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: "平均 TQI", value: `${Math.round(cognitiveGain.summary.avg_tqi * 100)}%` },
+                    { label: "反思质量", value: `${Math.round(cognitiveGain.summary.avg_reflection_quality * 100)}%` },
+                    { label: "提示依赖率", value: `${Math.round(cognitiveGain.summary.hint_dependency_rate * 100)}%` },
+                    { label: "认知增益", value: `${Math.round(cognitiveGain.summary.cognitive_gain * 100)}%` },
+                  ].map((card) => (
+                    <div key={card.label} className="rounded-xl border p-4" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+                      <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>{card.label}</p>
+                      <p className="text-xl font-bold mt-1" style={{ color: "var(--color-primary)" }}>{card.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-xl border p-4" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+                  <h3 className="text-sm font-medium mb-3" style={{ color: "var(--color-text)" }}>近 14 天 TQI 趋势</h3>
+                  {cognitiveGain.daily.tqi.length === 0 ? (
+                    <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>暂无样本</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {cognitiveGain.daily.tqi.map((item) => (
+                        <div key={item.date} className="flex items-center gap-3">
+                          <span className="text-xs w-20" style={{ color: "var(--color-text-secondary)" }}>{item.date}</span>
+                          <div className="flex-1 h-2 rounded-full" style={{ background: "var(--color-border)" }}>
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${Math.max(2, Math.round(item.avg_tqi * 100))}%`,
+                                background: "var(--color-primary)",
+                              }}
+                            />
+                          </div>
+                          <span className="text-xs w-14 text-right" style={{ color: "var(--color-text)" }}>
+                            {Math.round(item.avg_tqi * 100)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border p-4" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+                  <h3 className="text-sm font-medium mb-3" style={{ color: "var(--color-text)" }}>教师干预建议（自动）</h3>
+                  <ul className="space-y-2 text-sm" style={{ color: "var(--color-text)" }}>
+                    <li>1. 当提示依赖率高于 40% 时，优先安排“先解释后提示”任务。</li>
+                    <li>2. 当平均 TQI 低于 50% 时，优先使用 Mirror M0-M1 的澄清探针。</li>
+                    <li>3. 当认知增益连续 3 天为负时，降低难度并增加支架式追问。</li>
+                  </ul>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

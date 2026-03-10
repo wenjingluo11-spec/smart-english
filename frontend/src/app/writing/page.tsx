@@ -16,6 +16,17 @@ interface WritingFeedback {
     strengths?: string[];
     improvements?: string[];
     corrected_sentences?: { original: string; corrected: string; reason: string }[];
+    logic_questions?: string[];
+    framework_only_tips?: string[];
+    cognitive_audit?: {
+      student_points?: string[];
+      draft_content?: string;
+      revised_content?: string;
+      revision_reflection?: string;
+      revision_applied?: boolean;
+      reflection_quality?: number;
+      ghostwriting_risk?: { score: number; level: string; mode: string };
+    };
   } | null;
   created_at: string;
   xp?: { xp_gained: number };
@@ -34,6 +45,8 @@ interface Outline {
   structure: { section: string; key_points: string[]; suggested_sentences: string[] }[];
   vocabulary_hints: string[];
   grammar_focus: string[];
+  clarify_questions?: string[];
+  student_points?: string[];
   word_count_suggestion: number;
 }
 
@@ -42,6 +55,7 @@ interface RevisionGuide {
   paragraph_feedback: { paragraph_index: number; original: string; issues: string[]; suggestions: string[]; improved_version: string }[];
   language_tips: string[];
   next_steps: string[];
+  logic_challenge_questions?: string[];
 }
 
 type WritingStep = "topic" | "outline" | "draft" | "revision" | "submit" | "result";
@@ -51,6 +65,10 @@ export default function WritingPage() {
   const [step, setStep] = useState<WritingStep>("topic");
   const [prompt, setPrompt] = useState("");
   const [content, setContent] = useState("");
+  const [studentPoints, setStudentPoints] = useState<string[]>(["", "", ""]);
+  const [draftContent, setDraftContent] = useState("");
+  const [revisedContent, setRevisedContent] = useState("");
+  const [revisionReflection, setRevisionReflection] = useState("");
   const [outline, setOutline] = useState<Outline | null>(null);
   const [revisionGuide, setRevisionGuide] = useState<RevisionGuide | null>(null);
   const [feedback, setFeedback] = useState<WritingFeedback | null>(null);
@@ -75,14 +93,24 @@ export default function WritingPage() {
   }, [tab]);
 
   const handleGenerateOutline = async () => {
-    if (!prompt.trim()) return;
+    const cleanedPoints = studentPoints.map((p) => p.trim()).filter(Boolean);
+    if (!prompt.trim() || cleanedPoints.length < 3) {
+      setError("请先填写题目和至少 3 个观点");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const res = await api.post<Outline>("/writing/generate-outline", { prompt, content: "" });
+      const res = await api.post<Outline>("/writing/generate-outline", {
+        prompt,
+        content: "",
+        student_points: cleanedPoints,
+      });
       setOutline(res);
       setStep("outline");
-    } catch { setError("生成提纲失败"); }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "生成提纲失败");
+    }
     setLoading(false);
   };
 
@@ -93,20 +121,37 @@ export default function WritingPage() {
     try {
       const res = await api.post<RevisionGuide>("/writing/revision-guide", { prompt, content });
       setRevisionGuide(res);
+      setDraftContent(content);
+      if (!revisedContent.trim()) {
+        setRevisedContent(content);
+      }
       setStep("revision");
     } catch { setError("获取修改建议失败"); }
     setLoading(false);
   };
 
   const handleSubmit = async () => {
-    if (!content.trim()) return;
+    const finalContent = revisedContent.trim() || content.trim();
+    if (!finalContent) return;
     setLoading(true);
     setError("");
     setFeedback(null);
     try {
+      const payload = tab === "guided"
+        ? {
+          prompt: prompt || "Free writing",
+          content: finalContent,
+          student_points: studentPoints.map((p) => p.trim()).filter(Boolean),
+          draft_content: draftContent || content || finalContent,
+          revised_content: revisedContent.trim() ? revisedContent : null,
+          revision_reflection: revisionReflection.trim() ? revisionReflection : null,
+        }
+        : {
+          prompt: prompt || "Free writing",
+          content: finalContent,
+        };
       const res = await api.post<WritingFeedback>("/writing/submit", {
-        prompt: prompt || "Free writing",
-        content,
+        ...payload,
       });
       setFeedback(res);
       setStep("result");
@@ -124,6 +169,10 @@ export default function WritingPage() {
     setStep("topic");
     setPrompt("");
     setContent("");
+    setStudentPoints(["", "", ""]);
+    setDraftContent("");
+    setRevisedContent("");
+    setRevisionReflection("");
     setOutline(null);
     setRevisionGuide(null);
     setFeedback(null);
@@ -201,9 +250,28 @@ export default function WritingPage() {
                   style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" }}
                   rows={3}
                 />
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>
+                    先写下你的 3 个观点（必填）
+                  </p>
+                  {studentPoints.map((point, idx) => (
+                    <input
+                      key={idx}
+                      value={point}
+                      onChange={(e) => {
+                        const next = [...studentPoints];
+                        next[idx] = e.target.value;
+                        setStudentPoints(next);
+                      }}
+                      placeholder={`观点 ${idx + 1}`}
+                      className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none transition-all duration-200"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" }}
+                    />
+                  ))}
+                </div>
                 <button
                   onClick={handleGenerateOutline}
-                  disabled={loading || !prompt.trim()}
+                  disabled={loading || !prompt.trim() || studentPoints.map((p) => p.trim()).filter(Boolean).length < 3}
                   className="mt-3 px-5 py-2 rounded-full text-sm font-medium text-white disabled:opacity-30 transition-all duration-200 hover:scale-105 active:scale-95 shadow-theme-sm"
                   style={{ background: "linear-gradient(135deg, var(--color-primary), var(--color-accent))" }}
                 >
@@ -217,6 +285,18 @@ export default function WritingPage() {
               <div className="space-y-3">
                 <div className="card-gradient-writing p-5 shadow-theme-sm">
                   <h3 className="text-sm font-medium mb-3" style={{ color: "var(--color-text)" }}>Step 2: 写作提纲</h3>
+                  {outline.student_points && outline.student_points.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-xs font-medium mb-1" style={{ color: "var(--color-text-secondary)" }}>你的观点</p>
+                      <div className="flex flex-wrap gap-1">
+                        {outline.student_points.map((p, i) => (
+                          <span key={i} className="text-[10px] px-2 py-0.5 rounded" style={{ background: "var(--color-bg)", color: "var(--color-text)" }}>
+                            {p}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {outline.title_suggestion && (
                     <div className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>
                       建议标题：<span className="font-medium" style={{ color: "var(--color-text)" }}>{outline.title_suggestion}</span>
@@ -269,8 +349,22 @@ export default function WritingPage() {
                   </div>
                 )}
 
+                {outline.clarify_questions && outline.clarify_questions.length > 0 && (
+                  <div className="rounded-xl border p-3" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+                    <div className="text-xs font-medium mb-1" style={{ color: "var(--color-text)" }}>先回答这些追问再开写</div>
+                    {outline.clarify_questions.map((q, i) => (
+                      <div key={i} className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>• {q}</div>
+                    ))}
+                  </div>
+                )}
+
                 <button
-                  onClick={() => setStep("draft")}
+                  onClick={() => {
+                    setDraftContent("");
+                    setRevisedContent("");
+                    setRevisionReflection("");
+                    setStep("draft");
+                  }}
                   className="w-full py-2.5 rounded-full text-sm font-medium text-white transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-theme-sm"
                   style={{ background: "linear-gradient(135deg, var(--color-primary), var(--color-accent))" }}
                 >
@@ -304,7 +398,11 @@ export default function WritingPage() {
                     {loading ? "分析中..." : "获取修改建议"}
                   </button>
                   <button
-                    onClick={() => setStep("submit")}
+                    onClick={() => {
+                      setDraftContent(content);
+                      setRevisedContent(content);
+                      setStep("submit");
+                    }}
                     disabled={!content.trim()}
                     className="flex-1 py-2.5 rounded-full text-sm font-medium text-white disabled:opacity-30 transition-all duration-200 hover:scale-[1.02] shadow-theme-sm"
                     style={{ background: "linear-gradient(135deg, var(--color-primary), var(--color-accent))" }}
@@ -366,6 +464,39 @@ export default function WritingPage() {
                   </div>
                 )}
 
+                {revisionGuide.logic_challenge_questions && revisionGuide.logic_challenge_questions.length > 0 && (
+                  <div className="rounded-xl border p-3" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+                    <div className="text-xs font-medium mb-1" style={{ color: "var(--color-text)" }}>逻辑追问</div>
+                    {revisionGuide.logic_challenge_questions.map((q, i) => (
+                      <div key={i} className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>• {q}</div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="rounded-xl border p-3 space-y-2" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
+                  <div className="text-xs font-medium" style={{ color: "var(--color-text)" }}>二次改写稿</div>
+                  <textarea
+                    value={revisedContent}
+                    onChange={(e) => setRevisedContent(e.target.value)}
+                    placeholder="根据建议写出你的修改稿..."
+                    className="w-full border rounded-xl p-3 text-sm resize-none focus:outline-none transition-all duration-200"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-bg)", color: "var(--color-text)", minHeight: 160 }}
+                    rows={8}
+                  />
+                  <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
+                    修改稿字数：{revisedContent.split(/\s+/).filter(Boolean).length}
+                  </div>
+                  <div className="text-xs font-medium mt-1" style={{ color: "var(--color-text)" }}>反思说明（必填）</div>
+                  <textarea
+                    value={revisionReflection}
+                    onChange={(e) => setRevisionReflection(e.target.value)}
+                    placeholder="说明你改了哪些地方，为什么这样改。"
+                    className="w-full border rounded-xl p-3 text-sm resize-none focus:outline-none transition-all duration-200"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-bg)", color: "var(--color-text)" }}
+                    rows={3}
+                  />
+                </div>
+
                 <div className="flex gap-2">
                   <button
                     onClick={() => setStep("draft")}
@@ -376,8 +507,9 @@ export default function WritingPage() {
                   </button>
                   <button
                     onClick={() => setStep("submit")}
+                    disabled={!revisedContent.trim() || !revisionReflection.trim()}
                     className="flex-1 py-2.5 rounded-full text-sm font-medium text-white transition-all duration-200 hover:scale-[1.02] shadow-theme-sm"
-                    style={{ background: "linear-gradient(135deg, var(--color-primary), var(--color-accent))" }}
+                    style={{ background: "linear-gradient(135deg, var(--color-primary), var(--color-accent))", opacity: !revisedContent.trim() || !revisionReflection.trim() ? 0.5 : 1 }}
                   >
                     提交终稿
                   </button>
@@ -390,11 +522,16 @@ export default function WritingPage() {
               <div className="card-gradient-writing p-5 shadow-theme-sm">
                 <h3 className="text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>Step 5: 确认提交</h3>
                 <div className="text-xs mb-2" style={{ color: "var(--color-text-secondary)" }}>
-                  题目：{prompt} · 字数：{content.split(/\s+/).filter(Boolean).length} 词
+                  题目：{prompt} · 字数：{(revisedContent.trim() || content).split(/\s+/).filter(Boolean).length} 词
                 </div>
                 <div className="text-xs p-3 rounded-xl mb-3 whitespace-pre-wrap max-h-40 overflow-y-auto" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>
-                  {content}
+                  {revisedContent.trim() || content}
                 </div>
+                {revisionReflection.trim() && (
+                  <div className="text-xs p-3 rounded-xl mb-3" style={{ background: "var(--color-bg)", color: "var(--color-text-secondary)", border: "1px solid var(--color-border)" }}>
+                    反思：{revisionReflection}
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <button
                     onClick={() => setStep("draft")}
@@ -441,6 +578,58 @@ export default function WritingPage() {
                     {feedback.feedback_json.improvements.map((s, i) => (
                       <div key={i} className="text-xs" style={{ color: "var(--color-text)" }}>• {s}</div>
                     ))}
+                  </div>
+                )}
+                {feedback.feedback_json?.logic_questions && feedback.feedback_json.logic_questions.length > 0 && (
+                  <div className="rounded-2xl p-4 shadow-theme-sm" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
+                    <div className="text-xs font-medium mb-1" style={{ color: "var(--color-text)" }}>逻辑追问</div>
+                    {feedback.feedback_json.logic_questions.map((q, i) => (
+                      <div key={i} className="text-xs" style={{ color: "var(--color-text-secondary)" }}>• {q}</div>
+                    ))}
+                  </div>
+                )}
+                {feedback.feedback_json?.framework_only_tips && feedback.feedback_json.framework_only_tips.length > 0 && (
+                  <div className="rounded-2xl p-4 shadow-theme-sm" style={{ background: "#fff7ed", border: "1px solid #fed7aa" }}>
+                    <div className="text-xs font-medium mb-1" style={{ color: "#9a3412" }}>框架建议（高风险代写保护）</div>
+                    {feedback.feedback_json.framework_only_tips.map((tip, i) => (
+                      <div key={i} className="text-xs" style={{ color: "#9a3412" }}>• {tip}</div>
+                    ))}
+                  </div>
+                )}
+                {feedback.feedback_json?.cognitive_audit && (
+                  <div className="rounded-2xl p-4 shadow-theme-sm" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
+                    <div className="text-xs font-medium mb-2" style={{ color: "var(--color-text)" }}>认知审计</div>
+                    <div className="text-xs mb-2" style={{ color: "var(--color-text-secondary)" }}>
+                      自改：{feedback.feedback_json.cognitive_audit.revision_applied ? "是" : "否"} ·
+                      反思质量：{Math.round((feedback.feedback_json.cognitive_audit.reflection_quality || 0) * 100)}%
+                    </div>
+                    {feedback.feedback_json.cognitive_audit.ghostwriting_risk && (
+                      <div className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
+                        代写风险：{feedback.feedback_json.cognitive_audit.ghostwriting_risk.level.toUpperCase()}（{feedback.feedback_json.cognitive_audit.ghostwriting_risk.score}）
+                      </div>
+                    )}
+                  </div>
+                )}
+                {feedback.feedback_json?.cognitive_audit && (
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl p-3" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
+                      <p className="text-xs font-medium mb-1" style={{ color: "var(--color-text)" }}>原稿</p>
+                      <p className="text-[10px] whitespace-pre-wrap max-h-36 overflow-y-auto" style={{ color: "var(--color-text-secondary)" }}>
+                        {feedback.feedback_json.cognitive_audit.draft_content || content}
+                      </p>
+                    </div>
+                    <div className="rounded-xl p-3" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
+                      <p className="text-xs font-medium mb-1" style={{ color: "var(--color-text)" }}>改稿</p>
+                      <p className="text-[10px] whitespace-pre-wrap max-h-36 overflow-y-auto" style={{ color: "var(--color-text-secondary)" }}>
+                        {feedback.feedback_json.cognitive_audit.revised_content || revisedContent || content}
+                      </p>
+                    </div>
+                    <div className="rounded-xl p-3" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
+                      <p className="text-xs font-medium mb-1" style={{ color: "var(--color-text)" }}>AI建议</p>
+                      <p className="text-[10px] whitespace-pre-wrap max-h-36 overflow-y-auto" style={{ color: "var(--color-text-secondary)" }}>
+                        {feedback.feedback_json.improvements?.join("\n") || feedback.feedback_json.summary || "暂无"}
+                      </p>
+                    </div>
                   </div>
                 )}
                 {feedback.feedback_json?.corrected_sentences && feedback.feedback_json.corrected_sentences.length > 0 && (

@@ -14,15 +14,36 @@ import { Feather } from "@expo/vector-icons";
 import { streamChat } from "../../lib/api";
 import type { ChatMessage } from "../../lib/types";
 
+function hasDirectAnswerIntent(text: string) {
+  const normalized = text.toLowerCase();
+  return [
+    "直接告诉我",
+    "给我答案",
+    "直接给答案",
+    "只要答案",
+    "不要解释",
+    "tell me the answer",
+    "just give me the answer",
+    "answer only",
+  ].some((p) => normalized.includes(p));
+}
+
 export default function TutorScreen() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [reflection, setReflection] = useState("");
+  const [sendError, setSendError] = useState("");
   const [streaming, setStreaming] = useState(false);
   const listRef = useRef<FlatList>(null);
 
   async function handleSend() {
     const text = input.trim();
     if (!text || streaming) return;
+    setSendError("");
+    if (hasDirectAnswerIntent(text) && !reflection.trim()) {
+      setSendError("请先写下你的思路，再发送请求。");
+      return;
+    }
 
     const userMsg: ChatMessage = { role: "user", content: text };
     const history = [...messages, userMsg];
@@ -35,10 +56,22 @@ export default function TutorScreen() {
     setMessages([...history, assistantMsg]);
 
     try {
-      await streamChat(text, messages, (chunk) => {
-        assistantContent += chunk;
-        setMessages([...history, { role: "assistant", content: assistantContent }]);
-      });
+      await streamChat(
+        text,
+        messages,
+        (chunk) => {
+          assistantContent += chunk;
+          setMessages([...history, { role: "assistant", content: assistantContent }]);
+        },
+        {
+          mode: "free",
+          reflectionText: reflection,
+          guidanceLevel: "socratic",
+          hintBudget: 2,
+          allowDirectAnswer: false,
+        }
+      );
+      setReflection("");
     } catch {
       assistantContent = assistantContent || "抱歉，连接出现问题，请重试。";
       setMessages([...history, { role: "assistant", content: assistantContent }]);
@@ -76,6 +109,20 @@ export default function TutorScreen() {
           </View>
         }
       />
+
+      <View style={styles.reflectBar}>
+        <Text style={styles.reflectLabel}>先写下你的思路（反思输入）</Text>
+        <TextInput
+          style={styles.reflectInput}
+          placeholder="例如：我卡在时态判断..."
+          placeholderTextColor="#9CA3AF"
+          value={reflection}
+          onChangeText={setReflection}
+          editable={!streaming}
+          multiline
+        />
+        {sendError ? <Text style={styles.errorText}>{sendError}</Text> : null}
+      </View>
 
       <View style={styles.inputBar}>
         <TextInput
@@ -121,6 +168,26 @@ const styles = StyleSheet.create({
   aiText: { color: "#1F2937", fontSize: 15, lineHeight: 22 },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   emptyText: { color: "#9CA3AF", fontSize: 15 },
+  reflectBar: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+  },
+  reflectLabel: { fontSize: 12, color: "#6B7280", marginBottom: 6 },
+  reflectInput: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: "#1F2937",
+    minHeight: 52,
+    maxHeight: 90,
+  },
+  errorText: { marginTop: 6, fontSize: 12, color: "#DC2626" },
   inputBar: {
     flexDirection: "row",
     alignItems: "flex-end",

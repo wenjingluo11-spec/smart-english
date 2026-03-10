@@ -2,6 +2,7 @@
 
 import json
 import datetime
+import re
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.exam import ExamQuestion, ExamKnowledgePoint, KnowledgeMastery
@@ -32,6 +33,21 @@ SECTION_STRATEGIES = {
     "application_writing": "应用文写作技巧：1) 明确文体格式（书信、通知、邀请函等）2) 要点齐全，不遗漏 3) 语言得体，注意称呼和落款 4) 词数控制在80左右",
     "continuation_writing": "读后续写技巧：1) 仔细阅读原文，把握情节走向和人物性格 2) 紧扣段首句展开 3) 与原文风格保持一致 4) 注意情节合理性和情感变化 5) 适当使用细节描写",
 }
+
+
+def _score_reasoning_quality(strategy_choice: str | None, reflection_text: str | None) -> float:
+    score = 0.0
+    if (strategy_choice or "").strip():
+        score += 0.4
+
+    reflection = (reflection_text or "").strip()
+    if reflection:
+        score += 0.25
+        score += min(len(reflection) / 120.0, 0.25)
+        logic_hits = len(re.findall(r"(因为|所以|但是|因此|if|because|therefore|however)", reflection, flags=re.IGNORECASE))
+        score += min(logic_hits * 0.05, 0.10)
+
+    return round(min(score, 1.0), 3)
 
 
 async def get_section_masteries(user_id: int, exam_type: str, db: AsyncSession) -> list[dict]:
@@ -165,7 +181,12 @@ async def get_adaptive_questions(
 
 
 async def submit_training_answer(
-    user_id: int, question_id: int, answer: str, db: AsyncSession
+    user_id: int,
+    question_id: int,
+    answer: str,
+    db: AsyncSession,
+    strategy_choice: str | None = None,
+    reflection_text: str | None = None,
 ) -> dict:
     """批改训练答案 + 更新掌握度。"""
     result = await db.execute(
@@ -176,6 +197,9 @@ async def submit_training_answer(
         return {"error": "题目不存在"}
 
     student_ans = answer.strip()
+    strategy_choice = (strategy_choice or "").strip()
+    reflection_text = (reflection_text or "").strip()
+    reasoning_quality = _score_reasoning_quality(strategy_choice, reflection_text)
 
     # 智能判题：有选项的选择题用字母比较快速路径，其余用 LLM
     judge_explanation = ""
@@ -216,10 +240,11 @@ async def submit_training_answer(
 
         if not mastery:
             mastery_before = 0.0
+            quality_adjust = (reasoning_quality - 0.5) * 0.05
             mastery = KnowledgeMastery(
                 user_id=user_id,
                 knowledge_point_id=question.knowledge_point_id,
-                mastery_level=0.3 if is_correct else 0.0,
+                mastery_level=min(1.0, max(0.0, (0.3 if is_correct else 0.0) + quality_adjust)),
                 total_attempts=1,
                 correct_attempts=1 if is_correct else 0,
                 last_practiced_at=now,
@@ -230,6 +255,8 @@ async def submit_training_answer(
             mastery_before = mastery.mastery_level
             alpha = 0.3
             new_val = mastery.mastery_level * (1 - alpha) + (1.0 if is_correct else 0.0) * alpha
+            # 反思质量影响幅度较小，避免噪声导致掌握度剧烈波动
+            new_val += (reasoning_quality - 0.5) * 0.08
             if mastery.last_practiced_at:
                 days_since = (now - mastery.last_practiced_at).days
                 decay = max(0.9, 1.0 - days_since * 0.01)
@@ -243,8 +270,11 @@ async def submit_training_answer(
 
     await db.flush()
 
+    expected_quality = 0.6 if is_correct else 0.4
+
     return {
         "is_correct": is_correct,
+        "question_content": question.content,
         "correct_answer": question.answer,
         "explanation": question.explanation,
         "judge_explanation": judge_explanation,
@@ -252,6 +282,10 @@ async def submit_training_answer(
         "knowledge_point": kp_name,
         "mastery_before": round(mastery_before, 3),
         "mastery_after": round(mastery_after, 3),
+        "strategy_choice": strategy_choice or None,
+        "reflection_text": reflection_text or None,
+        "reasoning_quality_score": reasoning_quality,
+        "reasoning_quality_delta": round(reasoning_quality - expected_quality, 3),
     }
 
 

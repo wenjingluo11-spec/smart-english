@@ -7,8 +7,8 @@ from app.database import get_db
 from app.routers.auth import get_current_user
 from app.models.user import User
 from app.models.screenshot import ScreenshotLesson
-from app.schemas.screenshot import ScreenshotExerciseSubmit
-from app.services.screenshot import analyze_screenshot, check_exercise
+from app.schemas.screenshot import ScreenshotExerciseSubmit, ScreenshotReflectionSubmit
+from app.services.screenshot import analyze_screenshot, check_exercise, save_reflection_and_transfer
 from app.services.xp import award_xp
 from app.services.missions import update_mission_progress
 
@@ -19,6 +19,7 @@ router = APIRouter(prefix="/screenshot", tags=["screenshot"])
 async def analyze(
     file: UploadFile = File(...),
     source_type: str = Form("other"),
+    self_extract: str = Form(""),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -40,7 +41,13 @@ async def analyze(
     image_url = f"/uploads/{filename}"
 
     try:
-        lesson = await analyze_screenshot(image_url, source_type, user.id, db)
+        lesson = await analyze_screenshot(
+            image_url=image_url,
+            source_type=source_type,
+            self_extract=self_extract,
+            user_id=user.id,
+            db=db,
+        )
     except Exception as e:
         raise HTTPException(500, f"分析失败: {str(e)}")
 
@@ -95,9 +102,33 @@ async def submit_exercise(
     if not lesson:
         raise HTTPException(404, "学习记录不存在")
 
-    check = await check_exercise(lesson, req.exercise_index, req.answer)
+    check = await check_exercise(lesson, req.exercise_index, req.answer, transfer_sentence=req.transfer_sentence)
+    if "error" in check:
+        raise HTTPException(400, check["error"])
     if check.get("is_correct"):
         xp_result = await award_xp(user.id, "screenshot", db)
         check["xp"] = xp_result
     await db.commit()
     return check
+
+
+@router.post("/reflection")
+async def save_reflection(
+    req: ScreenshotReflectionSubmit,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(ScreenshotLesson).where(ScreenshotLesson.id == req.lesson_id, ScreenshotLesson.user_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if not lesson:
+        raise HTTPException(404, "学习记录不存在")
+
+    await save_reflection_and_transfer(
+        lesson=lesson,
+        delta_reflection=req.delta_reflection,
+        transfer_sentence=req.transfer_sentence,
+    )
+    await db.commit()
+    return {"ok": True, "lesson_id": lesson.id}

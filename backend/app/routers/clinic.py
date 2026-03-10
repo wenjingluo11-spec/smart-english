@@ -90,7 +90,14 @@ async def exercise(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await submit_exercise(req.plan_id, req.exercise_index, req.answer, user.id, db)
+    result = await submit_exercise(
+        req.plan_id,
+        req.exercise_index,
+        req.answer,
+        user.id,
+        db,
+        reflection_text=req.reflection_text,
+    )
     if "error" in result:
         raise HTTPException(404, result["error"])
 

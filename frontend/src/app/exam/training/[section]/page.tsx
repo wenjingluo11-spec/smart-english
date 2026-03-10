@@ -2,14 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { useExamStore } from "@/stores/exam";
-import MasteryBar from "@/components/exam/mastery-bar";
 import AnswerFeedback from "@/components/exam/answer-feedback";
 
 const SECTION_LABELS: Record<string, string> = {
   listening: "听力理解", reading: "阅读理解", cloze: "完形填空",
   grammar_fill: "语法填空", error_correction: "短文改错", writing: "书面表达",
 };
+
+const STRATEGY_OPTIONS = [
+  "先定位关键词再判断",
+  "先排除明显错误选项",
+  "先判断语法结构",
+  "先提炼题干逻辑",
+];
 
 export default function SectionTrainingPage() {
   const params = useParams();
@@ -18,6 +25,9 @@ export default function SectionTrainingPage() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState("");
+  const [strategyChoice, setStrategyChoice] = useState("");
+  const [reflectionText, setReflectionText] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const [feedback, setFeedback] = useState<Record<string, unknown> | null>(null);
   const [answeredCount, setAnsweredCount] = useState(0);
 
@@ -27,7 +37,21 @@ export default function SectionTrainingPage() {
 
   const handleSubmit = async () => {
     if (!selectedAnswer || !trainingQuestions[currentIndex]) return;
-    const result = await submitTrainingAnswer(trainingQuestions[currentIndex].id, selectedAnswer);
+    setSubmitError("");
+    if (!strategyChoice) {
+      setSubmitError("请先选择本题作答策略。");
+      return;
+    }
+    if (!reflectionText.trim()) {
+      setSubmitError("请先填写错因/思路自解释。");
+      return;
+    }
+    const result = await submitTrainingAnswer(
+      trainingQuestions[currentIndex].id,
+      selectedAnswer,
+      strategyChoice,
+      reflectionText.trim()
+    );
     setFeedback(result);
     setAnsweredCount(a => a + 1);
   };
@@ -35,6 +59,9 @@ export default function SectionTrainingPage() {
   const handleNext = () => {
     setFeedback(null);
     setSelectedAnswer("");
+    setStrategyChoice("");
+    setReflectionText("");
+    setSubmitError("");
     if (currentIndex + 1 < trainingQuestions.length) {
       setCurrentIndex(currentIndex + 1);
     } else {
@@ -66,9 +93,9 @@ export default function SectionTrainingPage() {
             已完成 {answeredCount} 题 · 自适应难度
           </p>
         </div>
-        <a href="/exam/training" className="text-sm px-3 py-1.5 rounded-lg" style={{ color: "var(--color-primary)", background: "var(--color-primary-light)" }}>
+        <Link href="/exam/training" className="text-sm px-3 py-1.5 rounded-lg" style={{ color: "var(--color-primary)", background: "var(--color-primary-light)" }}>
           返回
-        </a>
+        </Link>
       </div>
 
       {!q ? (
@@ -99,6 +126,28 @@ export default function SectionTrainingPage() {
               {q.content}
             </p>
 
+            <div className="mt-4 rounded-xl p-3" style={{ background: "var(--color-bg)", border: "1px solid var(--color-border)" }}>
+              <p className="text-xs mb-2" style={{ color: "var(--color-text-secondary)" }}>先选择你的作答策略</p>
+              <div className="grid grid-cols-2 gap-2">
+                {STRATEGY_OPTIONS.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    disabled={!!feedback}
+                    onClick={() => setStrategyChoice(item)}
+                    className="text-xs px-2 py-2 rounded-lg text-left transition-all"
+                    style={{
+                      background: strategyChoice === item ? "var(--color-primary-light)" : "var(--color-card)",
+                      border: `1px solid ${strategyChoice === item ? "var(--color-primary)" : "var(--color-border)"}`,
+                      color: strategyChoice === item ? "var(--color-primary)" : "var(--color-text)",
+                    }}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {q.options.length > 0 ? (
               <div className="mt-4 space-y-2">
                 {q.options.map((opt, i) => (
@@ -124,16 +173,33 @@ export default function SectionTrainingPage() {
                 style={{ background: "var(--color-bg)", border: "1px solid var(--color-border)", color: "var(--color-text)", minHeight: 80 }}
               />
             )}
+
+            <div className="mt-4">
+              <p className="text-xs mb-2" style={{ color: "var(--color-text-secondary)" }}>
+                写下你的思路或错因自解释（提交后用于认知反馈）
+              </p>
+              <textarea
+                value={reflectionText}
+                onChange={(e) => setReflectionText(e.target.value)}
+                disabled={!!feedback}
+                placeholder="例如：我先排除时态不一致选项，但在主谓一致上犹豫..."
+                className="w-full px-4 py-3 rounded-xl text-sm resize-none"
+                style={{ background: "var(--color-bg)", border: "1px solid var(--color-border)", color: "var(--color-text)", minHeight: 90 }}
+              />
+            </div>
           </div>
 
           {/* Feedback */}
           {feedback && <AnswerFeedback feedback={feedback} />}
+          {submitError && (
+            <p className="text-xs" style={{ color: "#dc2626" }}>{submitError}</p>
+          )}
 
           {/* Action button */}
           {!feedback ? (
-            <button onClick={handleSubmit} disabled={!selectedAnswer}
+            <button onClick={handleSubmit} disabled={!selectedAnswer || !strategyChoice || !reflectionText.trim()}
               className="w-full py-3 rounded-xl text-white font-medium"
-              style={{ background: "var(--color-primary)", opacity: selectedAnswer ? 1 : 0.5 }}>
+              style={{ background: "var(--color-primary)", opacity: selectedAnswer && strategyChoice && reflectionText.trim() ? 1 : 0.5 }}>
               提交答案
             </button>
           ) : (

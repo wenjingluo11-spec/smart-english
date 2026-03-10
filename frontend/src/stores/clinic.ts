@@ -30,7 +30,12 @@ interface ClinicState {
   diagnose: () => Promise<void>;
   fetchPatterns: () => Promise<void>;
   startTreatment: (patternId: number) => Promise<void>;
-  submitExercise: (planId: number, index: number, answer: string) => Promise<Record<string, unknown>>;
+  submitExercise: (
+    planId: number,
+    index: number,
+    answer: string,
+    reflectionText?: string
+  ) => Promise<Record<string, unknown>>;
 }
 
 export const useClinicStore = create<ClinicState>((set, get) => ({
@@ -63,9 +68,17 @@ export const useClinicStore = create<ClinicState>((set, get) => ({
     } catch { /* ignore */ }
   },
 
-  submitExercise: async (planId: number, index: number, answer: string) => {
+  submitExercise: async (
+    planId: number,
+    index: number,
+    answer: string,
+    reflectionText?: string
+  ) => {
     const res = await api.post<Record<string, unknown>>("/clinic/exercise", {
-      plan_id: planId, exercise_index: index, answer,
+      plan_id: planId,
+      exercise_index: index,
+      answer,
+      reflection_text: reflectionText || null,
     });
     if (res.plan_completed) {
       set({ currentPlan: null });

@@ -32,6 +32,7 @@ class TreatmentExerciseSubmit(BaseModel):
     plan_id: int
     exercise_index: int
     answer: str
+    reflection_text: str | None = None
 
 
 class TreatmentExerciseResult(BaseModel):
@@ -41,4 +42,8 @@ class TreatmentExerciseResult(BaseModel):
     progress: int
     total: int
     plan_completed: bool
+    reflection_quality_score: float | None = None
+    avg_reflection_score: float | None = None
+    required_reflection_score: float | None = None
+    reflection_required: bool | None = None
     xp: dict | None = None

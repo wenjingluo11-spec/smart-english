@@ -15,6 +15,9 @@ from app.models.story import StoryTemplate, StorySession, StoryChapter  # noqa: 
 from app.models.knowledge import KnowledgeNode, KnowledgeEdge, UserNodeStatus  # noqa: F401
 from app.models.arena import BattleSession, PlayerRating  # noqa: F401
 from app.models.quest import QuestTemplate, UserQuest  # noqa: F401
+from app.models.cognitive import (  # noqa: F401
+    CognitiveSession, CognitiveTurn, ReflectionEntry, TeachingQualityMetric, CognitiveGainSnapshot,
+)
 from app.database import engine
 
 
